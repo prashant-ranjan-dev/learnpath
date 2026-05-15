@@ -1,0 +1,11 @@
+spring.application.name=version1
+
+spring.datasource.url=jdbc:postgres://localhost:5432/LearnPath>
+spring.datasource.username=postgres
+spring.datasource.password=mysecret
+spring.datasource.driver-class-name=org.postgresql.Driver
+
+spring.jpa.database-platform=org.hibernat.dialect.PostgreSQLDialect
+spring.jpa.hibernate.ddl-auto= update
+spring.jpa.show-sql= true
+spring.jpa.properties.hibernate.format_sql=true
