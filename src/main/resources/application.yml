@@ -17,4 +17,5 @@ spring:
     ai:
       google:
         genai:
+          model: gemini-3-flash-preview
           api-key: ${GOOGLE_API_KEY}
