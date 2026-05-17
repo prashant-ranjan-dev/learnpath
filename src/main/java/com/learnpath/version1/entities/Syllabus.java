@@ -15,10 +15,10 @@ import java.util.List;
 @AllArgsConstructor
 @EqualsAndHashCode(onlyExplicitlyIncluded = true)
 public class Syllabus {
-    static enum CurrentUnderstanding{
+    public static enum CurrentUnderstanding{
         BEGINNER, INTERMEDIATE, EXPERT
     }
-    static enum Depth{
+    public static enum Depth{
         LEVEL1, LEVEL2, LEVEL3, LEVEL4, LEVEL5
     }
     @Id
