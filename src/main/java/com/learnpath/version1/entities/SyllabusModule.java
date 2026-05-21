@@ -28,6 +28,6 @@ public class SyllabusModule {
     @JoinColumn(name ="syllabus_id")
     private Syllabus syllabus;
 
-    @OneToMany(mappedBy = "syllabusModule")
+    @OneToMany(mappedBy = "syllabusModule", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<Topic> topics;
 }
