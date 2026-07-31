@@ -2,7 +2,9 @@ package com.learnpath.version1.entities;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.CreationTimestamp;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Entity
@@ -33,6 +35,14 @@ public class Syllabus {
     private Depth depthLevel;
 
     private String goal;
+
+    @CreationTimestamp
+    @Column(updatable = false)
+    private LocalDateTime createdAt;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id")
+    private User user;
 
     @OneToMany(mappedBy = "syllabus", cascade = CascadeType.ALL)
     private List<SyllabusModule> modules;
