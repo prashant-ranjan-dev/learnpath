@@ -6,7 +6,7 @@ import com.learnpath.version1.dto.QuizResultResponse;
 import com.learnpath.version1.dto.QuizSubmissionRequest;
 import com.learnpath.version1.entities.*;
 import com.learnpath.version1.exception.ResourceNotFoundException;
-import com.learnpath.version1.repositories.SyllabusModuleRepository;
+import com.learnpath.version1.repositories.ModuleRepository;
 import com.learnpath.version1.repositories.QuizAttemptRepository;
 import com.learnpath.version1.repositories.QuizRepository;
 import com.learnpath.version1.repositories.TopicRepository;
@@ -24,7 +24,7 @@ import java.util.List;
 @Service
 public class QuizService {
 
-    private final SyllabusModuleRepository moduleRepository;
+    private final ModuleRepository moduleRepository;
     private final TopicRepository topicRepository;
     private final QuizRepository quizRepository;
     private final QuizAttemptRepository attemptRepository;
@@ -32,7 +32,7 @@ public class QuizService {
     private final ObjectMapper objectMapper;
     private final UserContext userContext;
 
-    public QuizService(SyllabusModuleRepository moduleRepository,
+    public QuizService(ModuleRepository moduleRepository,
                        TopicRepository topicRepository,
                        QuizRepository quizRepository,
                        QuizAttemptRepository attemptRepository,
