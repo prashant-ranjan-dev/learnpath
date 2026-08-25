@@ -3,6 +3,7 @@ package com.learnpath.version1.entities;
 import jakarta.persistence.*;
 import lombok.*;
 
+
 @Entity
 @Getter
 @Setter
@@ -19,9 +20,10 @@ public class Topic {
 
     private String name;
 
-    @Column(columnDefinition = "TEXT")
+    @Column(nullable = true, columnDefinition = "TEXT")
     private String content;
 
     @ManyToOne
+    @JoinColumn(name = "syllabus_module_id")
     private SyllabusModule syllabusModule;
 }

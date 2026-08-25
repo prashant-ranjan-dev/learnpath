@@ -7,15 +7,16 @@ spring:
     password: ${DB_PASSWORD}
   jpa:
     hibernate:
+      database-platform: org.hibernate.dialect.PostgreSQLDialect
       ddl-auto: update
     show-sql: true
     properties:
       hibernate:
         format_sql: true
-
-  spring:
-    ai:
-      google:
-        genai:
-          model: gemini-3-flash-preview
-          api-key: ${GOOGLE_API_KEY}
+  ai:
+    google:
+      genai:
+        api-key: ${GOOGLE_API_KEY}
+        chat:
+          options:
+            model: gemini-3.1-flash-lite
