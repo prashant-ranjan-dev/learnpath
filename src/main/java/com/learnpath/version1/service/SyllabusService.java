@@ -7,9 +7,13 @@ import com.learnpath.version1.dto.TopicDto;
 import com.learnpath.version1.entities.Syllabus;
 import com.learnpath.version1.entities.SyllabusModule;
 import com.learnpath.version1.entities.Topic;
+import com.learnpath.version1.entities.User;
 import com.learnpath.version1.exception.AiResponseParsingException;
 import com.learnpath.version1.repositories.SyllabusRepository;
+import com.learnpath.version1.repositories.UserRepository;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.core.JacksonException;
@@ -30,13 +34,23 @@ public class SyllabusService {
     private final ChatClient chatClient;
     private final SyllabusRepository syllabusRepository;
     private final ObjectMapper objectMapper;
+    private final UserRepository userRepository;
 
     public SyllabusService(ChatClient.Builder chatClientBuilder,
                            SyllabusRepository syllabusRepository,
-                           ObjectMapper objectMapper){
+                           ObjectMapper objectMapper,
+                           UserRepository userRepository){
         this.chatClient = chatClientBuilder.build();
         this.syllabusRepository = syllabusRepository;
         this.objectMapper = objectMapper;
+        this.userRepository = userRepository;
+    }
+
+    private User getCurrentUser() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        String email = authentication.getName();
+        return userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("Authenticated user not found"));
     }
 
     @Transactional
@@ -68,6 +82,7 @@ public class SyllabusService {
                 .currentUnderstanding(Syllabus.CurrentUnderstanding.valueOf(request.currentUnderstanding()))
                 .depthLevel(Syllabus.Depth.valueOf(request.depthLevel()))
                 .goal(request.goal())
+                .user(getCurrentUser())
                 .modules(new ArrayList<>())
                 .build();
 
@@ -140,7 +155,7 @@ public class SyllabusService {
     }
 
 
-    private SyllabusResponse toResponseWithIds(Syllabus syllabus){
+    public SyllabusResponse toResponseWithIds(Syllabus syllabus){
         List<ModuleDto> moduleDtos = syllabus.getModules().stream()
                 .map(mod -> new ModuleDto(
                         mod.getId(),
@@ -152,7 +167,7 @@ public class SyllabusService {
 
                 )).collect(toList());
 
-        return new SyllabusResponse(syllabus.getId(), moduleDtos);
+        return new SyllabusResponse(syllabus.getId(),syllabus.getTopic(), moduleDtos);
     }
 }
 
