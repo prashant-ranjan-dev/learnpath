@@ -9,4 +9,5 @@ import java.util.Optional;
 public interface QuizAttemptRepository extends JpaRepository<QuizAttempt, Long> {
     Optional<QuizAttempt> findByQuizAndUserId(Long quizId, Long userId);
     List<QuizAttempt> findByUserIdOrderByAttemptedAtDesc(Long userId);
+    Optional<QuizAttempt> findFirstByQuizIdAndUserIdOrderByAttemptedAtDesc(Long quizId, Long userId);
 }

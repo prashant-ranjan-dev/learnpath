@@ -1,9 +1,6 @@
 package com.learnpath.version1.service;
 
-import com.learnpath.version1.dto.QuestionDto;
-import com.learnpath.version1.dto.QuizResponse;
-import com.learnpath.version1.dto.QuizResultResponse;
-import com.learnpath.version1.dto.QuizSubmissionRequest;
+import com.learnpath.version1.dto.*;
 import com.learnpath.version1.entities.*;
 import com.learnpath.version1.exception.ResourceNotFoundException;
 import com.learnpath.version1.repositories.ModuleRepository;
@@ -181,6 +178,96 @@ public class QuizService {
             String optionD,
             int correctOptionIndex
     ){}
+
+    public WeaknessAnalysisResponse analyzeWeaknesses(Long quizId){
+        User currentUser = userContext.getCurrentUser();
+        Quiz quiz = quizRepository.findById(quizId)
+                .orElseThrow(() -> new ResourceNotFoundException("Quiz not Found"));
+
+        QuizAttempt attempt = attemptRepository
+                .findFirstByQuizIdAndUserIdOrderByAttemptedAtDesc(quizId, currentUser.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("No quiz attempt found for this user"));
+
+        List<QuizQuestion> questions = quiz.getQuestions();
+
+        List<Integer> userAnswers;
+        try{
+            userAnswers = objectMapper.readValue(attempt.getUserAnswersJson(),
+                    new TypeReference<List<Integer>>() {
+                    });
+        } catch (Exception e){
+            throw new RuntimeException("Failed to parse user answers", e);
+        }
+
+        StringBuilder wrongQuestionsInfo = new StringBuilder();
+        for (int i = 0; i < questions.size(); i++){
+            QuizQuestion q = questions.get(i);
+            if (userAnswers.get(i) != q.getCorrectOptionIndex()){
+                wrongQuestionsInfo.append("Q").append(i+1)
+                        .append(": ").append(q.getQuestionText()).append("\n")
+                        .append("Your Answer: ").append(optionLetter(userAnswers.get(i))).append("\n")
+                        .append("Correct Answer: ").append(optionLetter(q.getCorrectOptionIndex())).append("\n\n");
+            }
+        }
+
+        SyllabusModule module = quiz.getModule();
+        StringBuilder topicsContent = new StringBuilder();
+        for (Topic t : module.getTopics()){
+            topicsContent.append("### ").append(t.getName()).append("\n");
+            if (t.getContent() != null & !t.getContent().isBlank()){
+                topicsContent.append(t.getContent()).append("\n\n");
+            }
+        }
+
+        String prompt = """
+                You are an expert educational analyst. A learner has completed a quiz. Here are the questions they answered incorrectly:
+                            %s
+                
+                            Here is the content of the topics in this module:
+                            %s
+                
+                            Based on the learner's mistakes and the topic content, identify the weak topics/concepts that the learner should review. For each weak topic, provide:
+                            - topicName: a short title of the weak topic/concept
+                            - reason: why the learner struggled (based on the incorrect answers)
+                            - suggestion: a specific action or resource to improve (e.g., "Review the section on X and practice exercises on Y")
+                
+                            Return ONLY a JSON array in the following format:
+                            [
+                              {
+                                "topicName": "...",
+                                "reason": "...",
+                                "suggestion": "..."
+                              }
+                            ]
+                            Do not include any markdown fences or extra text.
+                """.formatted(wrongQuestionsInfo.toString(), topicsContent.toString());
+
+        String aiOutput =chatClient.prompt()
+                .system("You are an expert in analyzing learning gaps. Always respond with raw JSON.")
+                .user(prompt)
+                .call()
+                .content();
+
+        List<WeakTopic> weakTopics;
+        try{
+            String json = extractJson(aiOutput);
+            weakTopics = objectMapper.readValue(json, new TypeReference<List<WeakTopic>>() {});
+        } catch (Exception e){
+            throw new RuntimeException("Failed to parse weakness analysis JSON : " + aiOutput, e);
+        }
+
+        return new WeaknessAnalysisResponse(weakTopics);
+    }
+
+    private String optionLetter(int idx) {
+        return switch (idx) {
+            case 0 -> "A";
+            case 1 -> "B";
+            case 2 -> "C";
+            case 3 -> "D";
+            default -> "?";
+        };
+    }
 
     private String extractJson(String raw){
 
