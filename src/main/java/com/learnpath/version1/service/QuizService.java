@@ -17,6 +17,7 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 @Service
 public class QuizService {
@@ -59,13 +60,23 @@ public class QuizService {
         SyllabusModule module = moduleRepository.findById(moduleId)
                 .orElseThrow(() -> new ResourceNotFoundException("Module not found"));
 
+        // Prevent duplicate AI generation and database constraints
+        Optional<Quiz> existingQuiz = quizRepository.findByModuleId(moduleId);
+        if (existingQuiz.isPresent()) {
+            Quiz quiz = existingQuiz.get();
+            List<QuestionDto> questionDtos = quiz.getQuestions().stream()
+                    .map(q -> new QuestionDto(q.getId(), q.getQuestionText(),
+                            q.getOptionA(), q.getOptionB(), q.getOptionC(), q.getOptionD()))
+                    .toList();
+            return new QuizResponse(quiz.getId(), questionDtos);
+        }
+
         // Collect content of all topics in this module
         List<Topic> topics = module.getTopics();
         StringBuilder contentBuilder = new StringBuilder();
         for (Topic t : topics){
             if (t.getContent() == null || t.getContent().isBlank()){
-                throw new IllegalStateException("Topic '" + t.getName() +"'has no content. View Content first.");
-
+                throw new IllegalStateException("Topic '" + t.getName() +"' has no content. View Content first.");
             }
             contentBuilder.append("### ").append(t.getName()).append("\n").append(t.getContent()).append("\n\n");
         }
@@ -91,46 +102,46 @@ public class QuizService {
                             Do not include any markdown fences or extra text.
                 """.formatted(contentBuilder.toString());
 
-          String aiOutput = chatClient.prompt()
-                  .system("You are an expert quiz maker. Always respond with raw JSON.")
-                  .user(prompt)
-                  .call()
-                  .content();
+        String aiOutput = chatClient.prompt()
+                .system("You are an expert quiz maker. Always respond with raw JSON.")
+                .user(prompt)
+                .call()
+                .content();
 
-          System.out.println("AI Quiz JSON: " + aiOutput);
-          List <AiQuestion> aiQuestions;
-          try{
-              String json = extractJson(aiOutput);
-              aiQuestions = objectMapper.readValue(json, new TypeReference<List<AiQuestion>>() {});
-          } catch (Exception e){
-              throw new RuntimeException("Failed to parse quiz JSON: " + aiOutput, e);
-          }
+        System.out.println("AI Quiz JSON: " + aiOutput);
+        List <AiQuestion> aiQuestions;
+        try{
+            String json = extractJson(aiOutput);
+            aiQuestions = objectMapper.readValue(json, new TypeReference<List<AiQuestion>>() {});
+        } catch (Exception e){
+            throw new RuntimeException("Failed to parse quiz JSON: " + aiOutput, e);
+        }
 
-          Quiz quiz = Quiz.builder().module(module).build();
+        Quiz quiz = Quiz.builder().module(module).build();
+        List<QuizQuestion> questions = new ArrayList<>();
 
-          List<QuizQuestion> questions = new ArrayList<>();
+        for (AiQuestion aiQ : aiQuestions){
+            QuizQuestion q = QuizQuestion.builder()
+                    .quiz(quiz)
+                    .questionText(aiQ.questionText())
+                    .optionA(aiQ.optionA())
+                    .optionB(aiQ.optionB())
+                    .optionC(aiQ.optionC())
+                    .optionD(aiQ.optionD())
+                    .correctOptionIndex(aiQ.correctOptionIndex()) // CRITICAL FIX
+                    .build();
+            questions.add(q);
+        }
 
-          for (AiQuestion aiQ : aiQuestions){
-              QuizQuestion q = QuizQuestion.builder()
-                      .quiz(quiz)
-                      .questionText(aiQ.questionText())
-                      .optionA(aiQ.optionA())
-                      .optionB(aiQ.optionB())
-                      .optionC(aiQ.optionC())
-                      .optionD(aiQ.optionD())
-                      .build();
-              questions.add(q);
-          }
+        quiz.setQuestions(questions);
+        quizRepository.save(quiz);
 
-          quiz.setQuestions(questions);
-          quizRepository.save(quiz);
+        List<QuestionDto> questionDtos = questions.stream()
+                .map(q -> new QuestionDto(q.getId(), q.getQuestionText(),
+                        q.getOptionA(), q.getOptionB(), q.getOptionC(), q.getOptionD()))
+                .toList();
 
-          List<QuestionDto> questionDtos = questions.stream()
-                  .map(q -> new QuestionDto(q.getId(), q.getQuestionText(),
-                          q.getOptionA(), q.getOptionB(), q.getOptionC(), q.getOptionD()))
-                  .toList();
-
-          return new QuizResponse(quiz.getId(), questionDtos);
+        return new QuizResponse(quiz.getId(), questionDtos);
     }
 
 
