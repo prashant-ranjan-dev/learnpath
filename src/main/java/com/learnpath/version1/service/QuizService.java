@@ -352,10 +352,17 @@ public class QuizService {
 
         StringBuilder topicsContent = new StringBuilder();
         for (Topic t : analysisTopics) {
-            topicsContent.append("### ").append(t.getName()).append("\n");
-            if (t.getContent() != null && !t.getContent().isBlank()) {
-                topicsContent.append(t.getContent()).append("\n\n");
+            if (t.getContent() == null || t.getContent().isBlank()) {
+                throw new IllegalStateException(
+                        "Topic '" + t.getName()
+                                + "' has no content for weakness analysis.");
             }
+
+            topicsContent.append("### ")
+                    .append(t.getName())
+                    .append("\n")
+                    .append(t.getContent())
+                    .append("\n\n");
         }
 
         String prompt = """
