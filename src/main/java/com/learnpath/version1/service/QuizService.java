@@ -290,7 +290,7 @@ public class QuizService {
         StringBuilder topicsContent = new StringBuilder();
         for (Topic t : module.getTopics()) {
             topicsContent.append("### ").append(t.getName()).append("\n");
-            if (t.getContent() != null & !t.getContent().isBlank()) {
+            if (t.getContent() != null && !t.getContent().isBlank()) {
                 topicsContent.append(t.getContent()).append("\n\n");
             }
         }
