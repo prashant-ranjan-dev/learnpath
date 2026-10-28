@@ -296,6 +296,11 @@ public class QuizService {
 
         List<QuizQuestion> questions = quiz.getQuestions();
 
+        if (questions == null || questions.isEmpty()) {
+            throw new IllegalStateException(
+                    "This quiz has no questions for weakness analysis.");
+        }
+
         List<Integer> userAnswers;
         try {
             userAnswers = objectMapper.readValue(attempt.getUserAnswersJson(),
