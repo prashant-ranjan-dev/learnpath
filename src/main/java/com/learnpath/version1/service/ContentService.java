@@ -73,6 +73,11 @@ public class ContentService {
                     "You are not authorized to complete this topic");
         }
 
+        if (topic.getContent() == null || topic.getContent().isBlank()) {
+            throw new IllegalStateException(
+                    "View the topic content before marking it as completed.");
+        }
+
         if (!topic.isCompleted()) {
             topic.setCompleted(true);
             topicRepository.save(topic);
