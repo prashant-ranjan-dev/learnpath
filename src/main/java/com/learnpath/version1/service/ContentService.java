@@ -38,10 +38,19 @@ public class ContentService {
     }
 
     @Transactional
-    public void markTopicCompleted(Long topicId) {
+    public void markTopicCompleted(Long topicId, Long userId) {
         Topic topic = topicRepository.findById(topicId)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Topic not found with id: " + topicId));
+
+        SyllabusModule module = topic.getSyllabusModule();
+        Syllabus syllabus = module.getSyllabus();
+
+        if (syllabus.getUser() == null
+                || !syllabus.getUser().getId().equals(userId)) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "You are not authorized to complete this topic");
+        }
 
         if (!topic.isCompleted()) {
             topic.setCompleted(true);
