@@ -95,6 +95,11 @@ public class QuizService {
                         "The existing quiz has no questions and cannot be accessed.");
             }
 
+            if (existingQuestions.stream().anyMatch(q -> q == null)) {
+                throw new IllegalStateException(
+                        "The existing quiz contains an invalid question and cannot be accessed.");
+            }
+
             List<QuestionDto> questionDtos = existingQuestions.stream()
                     .map(q -> new QuestionDto(q.getId(), q.getQuestionText(),
                             q.getOptionA(), q.getOptionB(), q.getOptionC(), q.getOptionD()))
