@@ -96,9 +96,9 @@ public class QuizService {
         }
 
         // Collect content of all topics in this module
-        List<Topic> topics = module.getTopics();
+        List<Topic> topicsList = module.getTopics();
         StringBuilder contentBuilder = new StringBuilder();
-        for (Topic t : topics) {
+        for (Topic t : topicsList) {
             if (t.getContent() == null || t.getContent().isBlank()) {
                 throw new IllegalStateException("Topic '" + t.getName() + "' has no content. View Content first.");
             }
