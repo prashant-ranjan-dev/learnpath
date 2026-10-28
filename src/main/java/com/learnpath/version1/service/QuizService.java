@@ -333,6 +333,10 @@ public class QuizService {
             }
         }
 
+        if (wrongQuestionsInfo.isEmpty()) {
+            return new WeaknessAnalysisResponse(List.of());
+        }
+
         SyllabusModule module = quiz.getModule();
         StringBuilder topicsContent = new StringBuilder();
         for (Topic t : module.getTopics()) {
