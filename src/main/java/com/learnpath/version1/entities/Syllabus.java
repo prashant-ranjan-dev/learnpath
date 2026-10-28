@@ -45,6 +45,7 @@ public class Syllabus {
     private User user;
 
     @OneToMany(mappedBy = "syllabus", cascade = CascadeType.ALL)
+    @OrderBy("id ASC")
     private List<SyllabusModule> modules;
 }
 

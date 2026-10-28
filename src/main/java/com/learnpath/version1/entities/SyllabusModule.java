@@ -29,5 +29,6 @@ public class SyllabusModule {
     private Syllabus syllabus;
 
     @OneToMany(mappedBy = "syllabusModule", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("id ASC")
     private List<Topic> topics;
 }
