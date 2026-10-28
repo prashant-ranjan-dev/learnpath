@@ -38,6 +38,27 @@ public class ContentService {
     }
 
     @Transactional
+    public ContentResponse getOrGenerateContentForUser(
+            Long topicId,
+            Long userId) {
+
+        Topic topic = topicRepository.findById(topicId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Topic not found with id: " + topicId));
+
+        SyllabusModule module = topic.getSyllabusModule();
+        Syllabus syllabus = module.getSyllabus();
+
+        if (syllabus.getUser() == null
+                || !syllabus.getUser().getId().equals(userId)) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "You are not authorized to access this topic");
+        }
+
+        return getOrGenerateContent(topicId);
+    }
+
+    @Transactional
     public void markTopicCompleted(Long topicId, Long userId) {
         Topic topic = topicRepository.findById(topicId)
                 .orElseThrow(() -> new ResourceNotFoundException(
