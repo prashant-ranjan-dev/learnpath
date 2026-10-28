@@ -193,7 +193,7 @@ public class QuizService {
             }
         }
 
-        boolean passed = (score * 100.0 / questions.size()) >= 70.0;
+        boolean passed = (score * 100.0 / questions.size()) > 70.0;
 
         QuizAttempt attempt = QuizAttempt.builder()
                 .quiz(quiz)
