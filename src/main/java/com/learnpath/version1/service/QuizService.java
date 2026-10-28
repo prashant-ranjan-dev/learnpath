@@ -88,10 +88,18 @@ public class QuizService {
         Optional<Quiz> existingQuiz = quizRepository.findByModuleId(moduleId);
         if (existingQuiz.isPresent()) {
             Quiz quiz = existingQuiz.get();
-            List<QuestionDto> questionDtos = quiz.getQuestions().stream()
+            List<QuizQuestion> existingQuestions = quiz.getQuestions();
+
+            if (existingQuestions == null || existingQuestions.isEmpty()) {
+                throw new IllegalStateException(
+                        "The existing quiz has no questions and cannot be accessed.");
+            }
+
+            List<QuestionDto> questionDtos = existingQuestions.stream()
                     .map(q -> new QuestionDto(q.getId(), q.getQuestionText(),
                             q.getOptionA(), q.getOptionB(), q.getOptionC(), q.getOptionD()))
                     .toList();
+
             return new QuizResponse(quiz.getId(), questionDtos);
         }
 
