@@ -237,6 +237,11 @@ public class QuizService {
                     "This quiz has no questions and cannot be submitted.");
         }
 
+        if (questions.stream().anyMatch(q -> q == null)) {
+            throw new IllegalStateException(
+                    "This quiz contains an invalid question and cannot be submitted.");
+        }
+
         if (submission == null || submission.answers() == null) {
             throw new IllegalArgumentException(
                     "Quiz submission and answers are required.");
