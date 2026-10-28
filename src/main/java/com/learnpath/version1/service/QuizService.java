@@ -383,6 +383,11 @@ public class QuizService {
                 .call()
                 .content();
 
+        if (aiOutput == null || aiOutput.isBlank()) {
+            throw new IllegalStateException(
+                    "AI returned an empty weakness analysis response.");
+        }
+
         List<WeakTopic> weakTopics;
         try {
             String json = extractJson(aiOutput);
