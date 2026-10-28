@@ -338,8 +338,15 @@ public class QuizService {
         }
 
         SyllabusModule module = quiz.getModule();
+        List<Topic> analysisTopics = module.getTopics();
+
+        if (analysisTopics == null || analysisTopics.isEmpty()) {
+            throw new IllegalStateException(
+                    "This module has no topics for weakness analysis.");
+        }
+
         StringBuilder topicsContent = new StringBuilder();
-        for (Topic t : module.getTopics()) {
+        for (Topic t : analysisTopics) {
             topicsContent.append("### ").append(t.getName()).append("\n");
             if (t.getContent() != null && !t.getContent().isBlank()) {
                 topicsContent.append(t.getContent()).append("\n\n");
