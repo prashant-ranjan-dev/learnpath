@@ -155,6 +155,7 @@ public class QuizService {
                         || question.optionB() == null || question.optionB().isBlank()
                         || question.optionC() == null || question.optionC().isBlank()
                         || question.optionD() == null || question.optionD().isBlank()
+                        || question.correctOptionIndex() == null
                         || question.correctOptionIndex() < 0
                         || question.correctOptionIndex() > 3) {
                     throw new IllegalArgumentException(
@@ -272,7 +273,7 @@ public class QuizService {
             String optionB,
             String optionC,
             String optionD,
-            int correctOptionIndex) {
+            Integer correctOptionIndex) {
     }
 
     @Transactional
