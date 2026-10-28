@@ -299,6 +299,18 @@ public class QuizService {
             throw new RuntimeException("Failed to parse user answers", e);
         }
 
+        if (userAnswers == null || userAnswers.size() != questions.size()) {
+            throw new IllegalStateException(
+                    "Stored quiz answers do not match the quiz questions.");
+        }
+
+        for (Integer answer : userAnswers) {
+            if (answer == null || answer < 0 || answer > 3) {
+                throw new IllegalStateException(
+                        "Stored quiz answers contain an invalid option index.");
+            }
+        }
+
         StringBuilder wrongQuestionsInfo = new StringBuilder();
         for (int i = 0; i < questions.size(); i++) {
             QuizQuestion q = questions.get(i);
