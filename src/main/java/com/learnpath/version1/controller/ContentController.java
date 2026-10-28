@@ -24,7 +24,13 @@ public class ContentController {
     @GetMapping("/{topicId}/content")
     public ResponseEntity<ContentResponse> getTopicContent(
             @PathVariable Long topicId) {
-        ContentResponse response = contentService.getOrGenerateContent(topicId);
+
+        User currentUser = userContext.getCurrentUser();
+
+        ContentResponse response = contentService.getOrGenerateContentForUser(
+                topicId,
+                currentUser.getId());
+
         return ResponseEntity.ok(response);
     }
 
