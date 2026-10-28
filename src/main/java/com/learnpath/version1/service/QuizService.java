@@ -133,7 +133,7 @@ public class QuizService {
                 .call()
                 .content();
 
-        System.out.println("AI Quiz JSON: " + aiOutput);
+        System.out.println("AI quiz response received for module ID: " + moduleId);
         List<AiQuestion> aiQuestions;
         try {
             String json = extractJson(aiOutput);
