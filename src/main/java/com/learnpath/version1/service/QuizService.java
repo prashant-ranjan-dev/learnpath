@@ -324,6 +324,11 @@ public class QuizService {
                     "This quiz has no questions for weakness analysis.");
         }
 
+        if (questions.stream().anyMatch(q -> q == null)) {
+            throw new IllegalStateException(
+                    "This quiz contains an invalid question for weakness analysis.");
+        }
+
         List<Integer> userAnswers;
         try {
             userAnswers = objectMapper.readValue(attempt.getUserAnswersJson(),
