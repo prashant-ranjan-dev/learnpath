@@ -379,10 +379,31 @@ public class QuizService {
         List<WeakTopic> weakTopics;
         try {
             String json = extractJson(aiOutput);
-            weakTopics = objectMapper.readValue(json, new TypeReference<List<WeakTopic>>() {
-            });
+            weakTopics = objectMapper.readValue(
+                    json,
+                    new TypeReference<List<WeakTopic>>() {
+                    });
+
+            if (weakTopics == null) {
+                throw new IllegalArgumentException(
+                        "AI returned a null weakness analysis.");
+            }
+
+            for (WeakTopic topic : weakTopics) {
+                if (topic == null
+                        || topic.topicName() == null
+                        || topic.topicName().isBlank()
+                        || topic.reason() == null
+                        || topic.reason().isBlank()
+                        || topic.suggestion() == null
+                        || topic.suggestion().isBlank()) {
+                    throw new IllegalArgumentException(
+                            "AI returned an incomplete weakness analysis entry.");
+                }
+            }
         } catch (Exception e) {
-            throw new RuntimeException("Failed to parse weakness analysis JSON.", e);
+            throw new RuntimeException(
+                    "Failed to parse or validate weakness analysis JSON.", e);
         }
 
         return new WeaknessAnalysisResponse(weakTopics);
