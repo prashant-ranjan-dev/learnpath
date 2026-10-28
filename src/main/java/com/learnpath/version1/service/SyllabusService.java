@@ -162,7 +162,7 @@ public class SyllabusService {
                         mod.getTitle(),
                         mod.getEstimatedHours(),
                         mod.getTopics().stream()
-                                .map(t -> new TopicDto(t.getId(), t.getName()))
+                                .map(t -> new TopicDto(t.getId(), t.getName(), t.isCompleted()))
                                 .collect(toList())
 
                 )).collect(toList());
