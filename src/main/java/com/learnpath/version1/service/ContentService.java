@@ -12,20 +12,20 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class ContentService {
-    private final TopicRepository  topicRepository;
+    private final TopicRepository topicRepository;
     private final ChatClient chatClient;
 
-    public ContentService (TopicRepository topicRepository, ChatClient.Builder chatBuilderBuilder){
+    public ContentService(TopicRepository topicRepository, ChatClient.Builder chatBuilderBuilder) {
         this.topicRepository = topicRepository;
         this.chatClient = chatBuilderBuilder.build();
     }
 
     @Transactional
-    public ContentResponse getOrGenerateContent(Long topicId){
+    public ContentResponse getOrGenerateContent(Long topicId) {
         Topic topic = topicRepository.findById(topicId)
-                .orElseThrow(() -> new ResourceNotFoundException("Topic not found with id: " +topicId));
+                .orElseThrow(() -> new ResourceNotFoundException("Topic not found with id: " + topicId));
 
-        if (topic.getContent() != null && !topic.getContent().isBlank()){
+        if (topic.getContent() != null && !topic.getContent().isBlank()) {
             return new ContentResponse(topic.getId(), topic.getName(), topic.getContent());
         }
 
@@ -37,7 +37,19 @@ public class ContentService {
         return new ContentResponse(topic.getId(), topic.getName(), generatedContent);
     }
 
-    private String generateContentFromAi(Topic topic){
+    @Transactional
+    public void markTopicCompleted(Long topicId) {
+        Topic topic = topicRepository.findById(topicId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Topic not found with id: " + topicId));
+
+        if (!topic.isCompleted()) {
+            topic.setCompleted(true);
+            topicRepository.save(topic);
+        }
+    }
+
+    private String generateContentFromAi(Topic topic) {
         SyllabusModule module = topic.getSyllabusModule();
         Syllabus syllabus = module.getSyllabus();
 
@@ -46,17 +58,17 @@ public class ContentService {
                                 - Overall Goal: %s
                                 - Current Understanding: %s
                                 - Desired Depth: %s
-                
+
                                 Topic: %s
-                
+
                                 Provide a detailed, clear explanation, with examples where appropriate.
                                 Use Markdown formatting for headings, lists, and code blocks (if relevant).
                                 Do not include any preamble like "Sure, here is the explanation:".
                                 """.formatted(syllabus.getGoal(),
-                                        syllabus.getCurrentUnderstanding(),
-                                        syllabus.getDepthLevel(),
-                                        topic.getName());
-                
+                syllabus.getCurrentUnderstanding(),
+                syllabus.getDepthLevel(),
+                topic.getName());
+
         return chatClient.prompt()
                 .user(prompt)
                 .call()
