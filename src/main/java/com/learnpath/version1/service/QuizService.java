@@ -137,10 +137,33 @@ public class QuizService {
         List<AiQuestion> aiQuestions;
         try {
             String json = extractJson(aiOutput);
-            aiQuestions = objectMapper.readValue(json, new TypeReference<List<AiQuestion>>() {
-            });
+            aiQuestions = objectMapper.readValue(
+                    json,
+                    new TypeReference<List<AiQuestion>>() {
+                    });
+
+            if (aiQuestions == null || aiQuestions.size() != 5) {
+                throw new IllegalArgumentException(
+                        "AI must generate exactly 5 quiz questions.");
+            }
+
+            for (AiQuestion question : aiQuestions) {
+                if (question == null
+                        || question.questionText() == null
+                        || question.questionText().isBlank()
+                        || question.optionA() == null || question.optionA().isBlank()
+                        || question.optionB() == null || question.optionB().isBlank()
+                        || question.optionC() == null || question.optionC().isBlank()
+                        || question.optionD() == null || question.optionD().isBlank()
+                        || question.correctOptionIndex() < 0
+                        || question.correctOptionIndex() > 3) {
+                    throw new IllegalArgumentException(
+                            "AI generated an invalid quiz question or answer.");
+                }
+            }
         } catch (Exception e) {
-            throw new RuntimeException("Failed to parse quiz JSON: " + aiOutput, e);
+            throw new RuntimeException(
+                    "Failed to parse or validate quiz JSON.", e);
         }
 
         Quiz quiz = Quiz.builder().module(module).build();
