@@ -23,6 +23,10 @@ public class Topic {
     @Column(nullable = true, columnDefinition = "TEXT")
     private String content;
 
+    @Builder.Default
+    @Column(nullable = false, columnDefinition = "boolean default false")
+    private boolean completed = false;
+    
     @ManyToOne
     @JoinColumn(name = "syllabus_module_id")
     private SyllabusModule syllabusModule;
