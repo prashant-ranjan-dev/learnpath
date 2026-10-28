@@ -189,8 +189,21 @@ public class QuizService {
         }
 
         List<QuizQuestion> questions = quiz.getQuestions();
+        if (submission == null || submission.answers() == null) {
+            throw new IllegalArgumentException(
+                    "Quiz submission and answers are required.");
+        }
+
         if (questions.size() != submission.answers().size()) {
-            throw new IllegalArgumentException("Number of answers does not match the number of questions.");
+            throw new IllegalArgumentException(
+                    "Number of answers does not match the number of questions.");
+        }
+
+        for (Integer answer : submission.answers()) {
+            if (answer == null || answer < 0 || answer > 3) {
+                throw new IllegalArgumentException(
+                        "Each answer must be a valid option index from 0 to 3.");
+            }
         }
 
         int score = 0;
@@ -244,9 +257,9 @@ public class QuizService {
         User currentUser = userContext.getCurrentUser();
         Quiz quiz = quizRepository.findById(quizId)
                 .orElseThrow(() -> new ResourceNotFoundException("Quiz not Found"));
-        
+
         verifyQuizOwnership(quiz, currentUser);
-        
+
         QuizAttempt attempt = attemptRepository
                 .findFirstByQuizIdAndUserIdOrderByAttemptedAtDesc(quizId, currentUser.getId())
                 .orElseThrow(() -> new ResourceNotFoundException("No quiz attempt found for this user"));
