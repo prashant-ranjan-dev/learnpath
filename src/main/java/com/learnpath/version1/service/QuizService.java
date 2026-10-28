@@ -239,9 +239,9 @@ public class QuizService {
         int score = 0;
         List<Integer> correctIndices = new ArrayList<>();
         for (int i = 0; i < questions.size(); i++) {
-            int corect = questions.get(i).getCorrectOptionIndex();
-            correctIndices.add(corect);
-            if (submission.answers().get(i) == corect) {
+            int correct = questions.get(i).getCorrectOptionIndex();
+            correctIndices.add(correct);
+            if (submission.answers().get(i) == correct) {
                 score++;
             }
         }
