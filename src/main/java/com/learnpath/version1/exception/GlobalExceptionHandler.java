@@ -3,6 +3,7 @@ package com.learnpath.version1.exception;
 import com.learnpath.version1.dto.ErrorDetail;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 
@@ -26,5 +27,11 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, String>> handleNotFound(ResourceNotFoundException ex){
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(Map.of("error", "Not Found", "message", ex.getMessage()));
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<Map<String, String>> handleAccessDenied(AccessDeniedException ex){
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+        .body(Map.of("error", "Forbidden", "message", "You do not have the permission to access this resource"));
     }
 }
