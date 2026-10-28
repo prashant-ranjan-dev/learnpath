@@ -62,11 +62,26 @@ public class QuizService {
         SyllabusModule module = moduleRepository.findById(moduleId)
                 .orElseThrow(() -> new ResourceNotFoundException("Module not found"));
 
-
         if (!module.getSyllabus().getUser().getId()
                 .equals(currentUser.getId())) {
             throw new AccessDeniedException(
                     "You do not have permission to access this module");
+        }
+
+        // A quiz is available only after every topic is completed.
+        List<Topic> topics = module.getTopics();
+
+        if (topics == null || topics.isEmpty()) {
+            throw new IllegalStateException(
+                    "This module has no topics and cannot be quizzed.");
+        }
+
+        boolean allTopicsCompleted = topics.stream()
+                .allMatch(Topic::isCompleted);
+
+        if (!allTopicsCompleted) {
+            throw new IllegalStateException(
+                    "Complete all topics in this module before accessing the quiz.");
         }
 
         // Prevent duplicate AI generation and database constraints
@@ -161,7 +176,6 @@ public class QuizService {
         Quiz quiz = quizRepository.findById(quizId)
                 .orElseThrow(() -> new ResourceNotFoundException("Quiz not Found"));
 
-
         verifyQuizOwnership(quiz, currentUser);
 
         List<QuizQuestion> questions = quiz.getQuestions();
@@ -215,7 +229,7 @@ public class QuizService {
             int correctOptionIndex) {
     }
 
-    @Transactional 
+    @Transactional
     public WeaknessAnalysisResponse analyzeWeaknesses(Long quizId) {
         User currentUser = userContext.getCurrentUser();
         Quiz quiz = quizRepository.findById(quizId)
