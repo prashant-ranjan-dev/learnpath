@@ -11,9 +11,9 @@ import com.learnpath.version1.utility.UserContext;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.security.access.AccessDeniedException;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
-
 
 import java.util.ArrayList;
 import java.util.List;
@@ -31,12 +31,12 @@ public class QuizService {
     private final UserContext userContext;
 
     public QuizService(ModuleRepository moduleRepository,
-                       TopicRepository topicRepository,
-                       QuizRepository quizRepository,
-                       QuizAttemptRepository attemptRepository,
-                       ChatClient.Builder chatClientBuilder,
-                       ObjectMapper objectMapper,
-                       UserContext userContext) {
+            TopicRepository topicRepository,
+            QuizRepository quizRepository,
+            QuizAttemptRepository attemptRepository,
+            ChatClient.Builder chatClientBuilder,
+            ObjectMapper objectMapper,
+            UserContext userContext) {
         this.moduleRepository = moduleRepository;
         this.topicRepository = topicRepository;
         this.quizRepository = quizRepository;
@@ -46,19 +46,28 @@ public class QuizService {
         this.userContext = userContext;
     }
     /*
-    public QuizResponse generateQuiz(Long moduleId) {
-        // temporary test: return hardcoded quiz
-        List<QuestionDto> questions = List.of(
-                new QuestionDto(1L, "Test Q", "A", "B", "C", "D")
-        );
-        return new QuizResponse(1L, questions);
-    }
-    */
+     * public QuizResponse generateQuiz(Long moduleId) {
+     * // temporary test: return hardcoded quiz
+     * List<QuestionDto> questions = List.of(
+     * new QuestionDto(1L, "Test Q", "A", "B", "C", "D")
+     * );
+     * return new QuizResponse(1L, questions);
+     * }
+     */
 
     @Transactional
-    public QuizResponse generateQuiz(Long moduleId){
+    public QuizResponse generateQuiz(Long moduleId) {
+        User currentUser = userContext.getCurrentUser();
+
         SyllabusModule module = moduleRepository.findById(moduleId)
                 .orElseThrow(() -> new ResourceNotFoundException("Module not found"));
+
+
+        if (!module.getSyllabus().getUser().getId()
+                .equals(currentUser.getId())) {
+            throw new AccessDeniedException(
+                    "You do not have permission to access this module");
+        }
 
         // Prevent duplicate AI generation and database constraints
         Optional<Quiz> existingQuiz = quizRepository.findByModuleId(moduleId);
@@ -74,9 +83,9 @@ public class QuizService {
         // Collect content of all topics in this module
         List<Topic> topics = module.getTopics();
         StringBuilder contentBuilder = new StringBuilder();
-        for (Topic t : topics){
-            if (t.getContent() == null || t.getContent().isBlank()){
-                throw new IllegalStateException("Topic '" + t.getName() +"' has no content. View Content first.");
+        for (Topic t : topics) {
+            if (t.getContent() == null || t.getContent().isBlank()) {
+                throw new IllegalStateException("Topic '" + t.getName() + "' has no content. View Content first.");
             }
             contentBuilder.append("### ").append(t.getName()).append("\n").append(t.getContent()).append("\n\n");
         }
@@ -84,10 +93,10 @@ public class QuizService {
         String prompt = """
                 You are an expert educator. Using the learning content below, create a 5-question multiple-choice quiz.
                             Each question must have 4 options (A, B, C, D) and the index of the correct answer (0 for A, 1 for B, etc.).
-                
+
                             Content:
                             %s
-                
+
                             Return ONLY a JSON array in the following format:
                             [
                               {
@@ -100,7 +109,8 @@ public class QuizService {
                               }
                             ]
                             Do not include any markdown fences or extra text.
-                """.formatted(contentBuilder.toString());
+                """
+                .formatted(contentBuilder.toString());
 
         String aiOutput = chatClient.prompt()
                 .system("You are an expert quiz maker. Always respond with raw JSON.")
@@ -109,18 +119,19 @@ public class QuizService {
                 .content();
 
         System.out.println("AI Quiz JSON: " + aiOutput);
-        List <AiQuestion> aiQuestions;
-        try{
+        List<AiQuestion> aiQuestions;
+        try {
             String json = extractJson(aiOutput);
-            aiQuestions = objectMapper.readValue(json, new TypeReference<List<AiQuestion>>() {});
-        } catch (Exception e){
+            aiQuestions = objectMapper.readValue(json, new TypeReference<List<AiQuestion>>() {
+            });
+        } catch (Exception e) {
             throw new RuntimeException("Failed to parse quiz JSON: " + aiOutput, e);
         }
 
         Quiz quiz = Quiz.builder().module(module).build();
         List<QuizQuestion> questions = new ArrayList<>();
 
-        for (AiQuestion aiQ : aiQuestions){
+        for (AiQuestion aiQ : aiQuestions) {
             QuizQuestion q = QuizQuestion.builder()
                     .quiz(quiz)
                     .questionText(aiQ.questionText())
@@ -144,24 +155,26 @@ public class QuizService {
         return new QuizResponse(quiz.getId(), questionDtos);
     }
 
-
     @Transactional
-    public QuizResultResponse submitQuiz(Long quizId, QuizSubmissionRequest submission){
+    public QuizResultResponse submitQuiz(Long quizId, QuizSubmissionRequest submission) {
         User currentUser = userContext.getCurrentUser();
         Quiz quiz = quizRepository.findById(quizId)
                 .orElseThrow(() -> new ResourceNotFoundException("Quiz not Found"));
 
+
+        verifyQuizOwnership(quiz, currentUser);
+
         List<QuizQuestion> questions = quiz.getQuestions();
-        if (questions.size() != submission.answers().size()){
+        if (questions.size() != submission.answers().size()) {
             throw new IllegalArgumentException("Number of answers does not match the number of questions.");
         }
 
         int score = 0;
         List<Integer> correctIndices = new ArrayList<>();
-        for (int i = 0; i < questions.size(); i++){
+        for (int i = 0; i < questions.size(); i++) {
             int corect = questions.get(i).getCorrectOptionIndex();
             correctIndices.add(corect);
-            if (submission.answers().get(i) == corect){
+            if (submission.answers().get(i) == corect) {
                 score++;
             }
         }
@@ -181,16 +194,29 @@ public class QuizService {
         return new QuizResultResponse(score, questions.size(), passed, correctIndices);
     }
 
+    private void verifyQuizOwnership(Quiz quiz, User currentUser) {
+        Long ownerId = quiz.getModule()
+                .getSyllabus()
+                .getUser()
+                .getId();
+
+        if (!ownerId.equals(currentUser.getId())) {
+            throw new AccessDeniedException(
+                    "You do not have permission to access this quiz");
+        }
+    }
+
     private record AiQuestion(
             String questionText,
             String optionA,
             String optionB,
             String optionC,
             String optionD,
-            int correctOptionIndex
-    ){}
+            int correctOptionIndex) {
+    }
 
-    public WeaknessAnalysisResponse analyzeWeaknesses(Long quizId){
+    @Transactional 
+    public WeaknessAnalysisResponse analyzeWeaknesses(Long quizId) {
         User currentUser = userContext.getCurrentUser();
         Quiz quiz = quizRepository.findById(quizId)
                 .orElseThrow(() -> new ResourceNotFoundException("Quiz not Found"));
@@ -202,19 +228,19 @@ public class QuizService {
         List<QuizQuestion> questions = quiz.getQuestions();
 
         List<Integer> userAnswers;
-        try{
+        try {
             userAnswers = objectMapper.readValue(attempt.getUserAnswersJson(),
                     new TypeReference<List<Integer>>() {
                     });
-        } catch (Exception e){
+        } catch (Exception e) {
             throw new RuntimeException("Failed to parse user answers", e);
         }
 
         StringBuilder wrongQuestionsInfo = new StringBuilder();
-        for (int i = 0; i < questions.size(); i++){
+        for (int i = 0; i < questions.size(); i++) {
             QuizQuestion q = questions.get(i);
-            if (userAnswers.get(i) != q.getCorrectOptionIndex()){
-                wrongQuestionsInfo.append("Q").append(i+1)
+            if (userAnswers.get(i) != q.getCorrectOptionIndex()) {
+                wrongQuestionsInfo.append("Q").append(i + 1)
                         .append(": ").append(q.getQuestionText()).append("\n")
                         .append("Your Answer: ").append(optionLetter(userAnswers.get(i))).append("\n")
                         .append("Correct Answer: ").append(optionLetter(q.getCorrectOptionIndex())).append("\n\n");
@@ -223,9 +249,9 @@ public class QuizService {
 
         SyllabusModule module = quiz.getModule();
         StringBuilder topicsContent = new StringBuilder();
-        for (Topic t : module.getTopics()){
+        for (Topic t : module.getTopics()) {
             topicsContent.append("### ").append(t.getName()).append("\n");
-            if (t.getContent() != null & !t.getContent().isBlank()){
+            if (t.getContent() != null & !t.getContent().isBlank()) {
                 topicsContent.append(t.getContent()).append("\n\n");
             }
         }
@@ -233,15 +259,15 @@ public class QuizService {
         String prompt = """
                 You are an expert educational analyst. A learner has completed a quiz. Here are the questions they answered incorrectly:
                             %s
-                
+
                             Here is the content of the topics in this module:
                             %s
-                
+
                             Based on the learner's mistakes and the topic content, identify the weak topics/concepts that the learner should review. For each weak topic, provide:
                             - topicName: a short title of the weak topic/concept
                             - reason: why the learner struggled (based on the incorrect answers)
                             - suggestion: a specific action or resource to improve (e.g., "Review the section on X and practice exercises on Y")
-                
+
                             Return ONLY a JSON array in the following format:
                             [
                               {
@@ -251,19 +277,21 @@ public class QuizService {
                               }
                             ]
                             Do not include any markdown fences or extra text.
-                """.formatted(wrongQuestionsInfo.toString(), topicsContent.toString());
+                """
+                .formatted(wrongQuestionsInfo.toString(), topicsContent.toString());
 
-        String aiOutput =chatClient.prompt()
+        String aiOutput = chatClient.prompt()
                 .system("You are an expert in analyzing learning gaps. Always respond with raw JSON.")
                 .user(prompt)
                 .call()
                 .content();
 
         List<WeakTopic> weakTopics;
-        try{
+        try {
             String json = extractJson(aiOutput);
-            weakTopics = objectMapper.readValue(json, new TypeReference<List<WeakTopic>>() {});
-        } catch (Exception e){
+            weakTopics = objectMapper.readValue(json, new TypeReference<List<WeakTopic>>() {
+            });
+        } catch (Exception e) {
             throw new RuntimeException("Failed to parse weakness analysis JSON : " + aiOutput, e);
         }
 
@@ -280,16 +308,17 @@ public class QuizService {
         };
     }
 
-    private String extractJson(String raw){
+    private String extractJson(String raw) {
 
         String trimmed = raw.trim();
-        if (trimmed.startsWith("```")){
+        if (trimmed.startsWith("```")) {
             String[] lines = trimmed.split("\n");
-            if (lines.length >= 3){
+            if (lines.length >= 3) {
                 StringBuilder sb = new StringBuilder();
-                for (int i = 1; i < lines.length-1; i++){
+                for (int i = 1; i < lines.length - 1; i++) {
                     sb.append(lines[i]);
-                    if (i < lines.length -2) sb.append("\n");
+                    if (i < lines.length - 2)
+                        sb.append("\n");
                 }
                 return sb.toString().trim();
             }
