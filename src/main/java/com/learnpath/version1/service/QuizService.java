@@ -178,6 +178,16 @@ public class QuizService {
 
         verifyQuizOwnership(quiz, currentUser);
 
+        SyllabusModule module = quiz.getModule();
+        List<Topic> moduleTopics = module.getTopics();
+
+        if (moduleTopics == null
+                || moduleTopics.isEmpty()
+                || moduleTopics.stream().anyMatch(topic -> !topic.isCompleted())) {
+            throw new IllegalStateException(
+                    "Complete all topics in this module before submitting the quiz.");
+        }
+
         List<QuizQuestion> questions = quiz.getQuestions();
         if (questions.size() != submission.answers().size()) {
             throw new IllegalArgumentException("Number of answers does not match the number of questions.");
