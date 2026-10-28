@@ -213,6 +213,12 @@ public class QuizService {
         }
 
         List<QuizQuestion> questions = quiz.getQuestions();
+
+        if (questions == null || questions.isEmpty()) {
+            throw new IllegalStateException(
+                    "This quiz has no questions and cannot be submitted.");
+        }
+
         if (submission == null || submission.answers() == null) {
             throw new IllegalArgumentException(
                     "Quiz submission and answers are required.");
