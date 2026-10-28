@@ -355,7 +355,7 @@ public class QuizService {
             weakTopics = objectMapper.readValue(json, new TypeReference<List<WeakTopic>>() {
             });
         } catch (Exception e) {
-            throw new RuntimeException("Failed to parse weakness analysis JSON : " + aiOutput, e);
+            throw new RuntimeException("Failed to parse weakness analysis JSON.", e);
         }
 
         return new WeaknessAnalysisResponse(weakTopics);
