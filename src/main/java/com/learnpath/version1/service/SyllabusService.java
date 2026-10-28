@@ -8,9 +8,12 @@ import com.learnpath.version1.entities.Syllabus;
 import com.learnpath.version1.entities.SyllabusModule;
 import com.learnpath.version1.entities.Topic;
 import com.learnpath.version1.entities.User;
+import com.learnpath.version1.entities.Quiz;
 import com.learnpath.version1.exception.AiResponseParsingException;
 import com.learnpath.version1.repositories.SyllabusRepository;
 import com.learnpath.version1.repositories.UserRepository;
+import com.learnpath.version1.repositories.QuizAttemptRepository;
+import com.learnpath.version1.repositories.QuizRepository;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -27,23 +30,29 @@ import static java.util.stream.Collectors.toList;
 @Service
 public class SyllabusService {
 
-    record AiSyllabusResponse(List<AiModule> modules) {}
+    record AiSyllabusResponse(List<AiModule> modules) {
+    }
 
-    record AiModule(String title, double estimatedHours, List<String> topics) {}
+    record AiModule(String title, double estimatedHours, List<String> topics) {
+    }
 
     private final ChatClient chatClient;
     private final SyllabusRepository syllabusRepository;
     private final ObjectMapper objectMapper;
     private final UserRepository userRepository;
+    private final QuizRepository quizRepository;
+    private final QuizAttemptRepository quizAttemptRepository;
 
     public SyllabusService(ChatClient.Builder chatClientBuilder,
-                           SyllabusRepository syllabusRepository,
-                           ObjectMapper objectMapper,
-                           UserRepository userRepository){
+            SyllabusRepository syllabusRepository,
+            ObjectMapper objectMapper,
+            UserRepository userRepository, QuizRepository quizRepository, QuizAttemptRepository quizAttemptRepository) {
         this.chatClient = chatClientBuilder.build();
         this.syllabusRepository = syllabusRepository;
         this.objectMapper = objectMapper;
         this.userRepository = userRepository;
+        this.quizRepository = quizRepository;
+        this.quizAttemptRepository = quizAttemptRepository;
     }
 
     private User getCurrentUser() {
@@ -60,7 +69,8 @@ public class SyllabusService {
 
         // Call the AI agent using the Google Gemini
         String aiOutput = chatClient.prompt()
-                .system("You are an expert curriculum designer. You create detailed, structured syllabi for learners. \n" +
+                .system("You are an expert curriculum designer. You create detailed, structured syllabi for learners. \n"
+                        +
                         "Always respond in perfect JSON matching the user's requested schema. Do not include any extra text, markdown, or code fences.")
                 .user(prompt)
                 .call()
@@ -69,7 +79,7 @@ public class SyllabusService {
         // Extract the Json from the AI Response
         String json = extractJson(aiOutput);
         AiSyllabusResponse aiResponse;
-        try{
+        try {
             aiResponse = objectMapper.readValue(json, AiSyllabusResponse.class);
         } catch (JacksonException e) {
             throw new AiResponseParsingException(
@@ -88,7 +98,7 @@ public class SyllabusService {
 
         List<SyllabusModule> moduleEntities = new ArrayList<>();
 
-        for (AiModule aiMod : aiResponse.modules()){
+        for (AiModule aiMod : aiResponse.modules()) {
             SyllabusModule mod = SyllabusModule.builder()
                     .title(aiMod.title())
                     .estimatedHours((float) aiMod.estimatedHours())
@@ -96,7 +106,7 @@ public class SyllabusService {
                     .topics(new ArrayList<>())
                     .build();
 
-            for (String topicName : aiMod.topics()){
+            for (String topicName : aiMod.topics()) {
                 Topic topic = Topic.builder()
                         .name(topicName)
                         .syllabusModule(mod)
@@ -112,18 +122,18 @@ public class SyllabusService {
         return toResponseWithIds(savedSyllabus);
     }
 
-    private String buildPrompt(SyllabusRequest request){
+    private String buildPrompt(SyllabusRequest request) {
         return """
                             Topic: %s
                             Current understanding: %s
                             Desired depth: %s
                             Goal: %s
-                
+
                             Produce exactly 4-6 modules. Each module must have:
                             - "title": a descriptive module title
                             - "topics": a list of 3-5 specific topics (strings)
                             - "estimatedHours": a number (e.g. 3.5) representing estimated hours
-                
+
                             Return ONLY a valid JSON object with a single key "modules", like:
                             {
                               "modules": [
@@ -138,15 +148,16 @@ public class SyllabusService {
 
     }
 
-    private String extractJson (String raw){
+    private String extractJson(String raw) {
         String trimmed = raw.trim();
-        if (trimmed.startsWith("```")){
+        if (trimmed.startsWith("```")) {
             String[] lines = trimmed.split("\n");
-            if (lines.length >= 3){
+            if (lines.length >= 3) {
                 StringBuilder sb = new StringBuilder();
-                for (int i = 1; i < lines.length-1; i++) {
+                for (int i = 1; i < lines.length - 1; i++) {
                     sb.append(lines[i]);
-                    if (i < lines.length -1)sb.append("\n");
+                    if (i < lines.length - 1)
+                        sb.append("\n");
                 }
                 return sb.toString().trim();
             }
@@ -154,20 +165,51 @@ public class SyllabusService {
         return trimmed;
     }
 
+    public SyllabusResponse toResponseWithIds(Syllabus syllabus) {
+        List<SyllabusModule> modules = syllabus.getModules();
+        List<ModuleDto> moduleDtos = new ArrayList<>();
 
-    public SyllabusResponse toResponseWithIds(Syllabus syllabus){
-        List<ModuleDto> moduleDtos = syllabus.getModules().stream()
-                .map(mod -> new ModuleDto(
-                        mod.getId(),
-                        mod.getTitle(),
-                        mod.getEstimatedHours(),
-                        mod.getTopics().stream()
-                                .map(t -> new TopicDto(t.getId(), t.getName(), t.isCompleted()))
-                                .collect(toList())
+        Long userId = syllabus.getUser() != null
+                ? syllabus.getUser().getId()
+                : null;
 
-                )).collect(toList());
+        boolean previousModuleCompleted = true;
 
-        return new SyllabusResponse(syllabus.getId(),syllabus.getTopic(), moduleDtos);
+        for (SyllabusModule module : modules) {
+            boolean completed = false;
+
+            if (userId != null && module.getId() != null) {
+                completed = quizRepository.findByModuleId(module.getId())
+                        .map(Quiz::getId)
+                        .map(quizId -> quizAttemptRepository
+                                .existsByQuizIdAndUserIdAndPassedTrue(
+                                        quizId, userId))
+                        .orElse(false);
+            }
+
+            boolean unlocked = previousModuleCompleted;
+
+            List<TopicDto> topicDtos = module.getTopics().stream()
+                    .map(topic -> new TopicDto(
+                            topic.getId(),
+                            topic.getName(),
+                            topic.isCompleted()))
+                    .toList();
+
+            moduleDtos.add(new ModuleDto(
+                    module.getId(),
+                    module.getTitle(),
+                    module.getEstimatedHours(),
+                    completed,
+                    unlocked,
+                    topicDtos));
+
+            previousModuleCompleted = completed;
+        }
+
+        return new SyllabusResponse(
+                syllabus.getId(),
+                syllabus.getTopic(),
+                moduleDtos);
     }
 }
-
