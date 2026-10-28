@@ -11,7 +11,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.security.access.AccessDeniedException;
 
-
 import java.util.List;
 
 @RestController
@@ -22,7 +21,7 @@ public class QuizController {
     private final QuizService quizService;
     private final QuizRepository quizRepository;
 
-    public QuizController(QuizService quizService, QuizRepository quizRepository, UserContext userContext ) {
+    public QuizController(QuizService quizService, QuizRepository quizRepository, UserContext userContext) {
         this.quizService = quizService;
         this.quizRepository = quizRepository;
         this.userContext = userContext;
@@ -49,9 +48,18 @@ public class QuizController {
 
         if (!ownerId.equals(currentUser.getId())) {
             throw new AccessDeniedException(
-                "You do not have permission to access this resource"
-            );
+                    "You do not have permission to access this resource");
         }
+
+        List<com.learnpath.version1.entities.Topic> topics = quiz.getModule().getTopics();
+
+        if (topics == null
+                || topics.isEmpty()
+                || topics.stream().anyMatch(topic -> !topic.isCompleted())) {
+            throw new IllegalStateException(
+                    "Complete all topics in this module before accessing the quiz.");
+        }
+
         List<QuestionDto> questionDtos = quiz.getQuestions().stream()
                 .map(q -> new QuestionDto(q.getId(), q.getQuestionText(),
                         q.getOptionA(), q.getOptionB(), q.getOptionC(), q.getOptionD()))
@@ -62,7 +70,7 @@ public class QuizController {
     // 2. Submit answers for a quiz
     @PostMapping("/{quizId}/submit")
     public ResponseEntity<QuizResultResponse> submitQuiz(@PathVariable Long quizId,
-                                                         @RequestBody QuizSubmissionRequest submission) {
+            @RequestBody QuizSubmissionRequest submission) {
         QuizResultResponse result = quizService.submitQuiz(quizId, submission);
         return ResponseEntity.ok(result);
     }
