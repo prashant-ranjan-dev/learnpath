@@ -244,7 +244,9 @@ public class QuizService {
         User currentUser = userContext.getCurrentUser();
         Quiz quiz = quizRepository.findById(quizId)
                 .orElseThrow(() -> new ResourceNotFoundException("Quiz not Found"));
-
+        
+        verifyQuizOwnership(quiz, currentUser);
+        
         QuizAttempt attempt = attemptRepository
                 .findFirstByQuizIdAndUserIdOrderByAttemptedAtDesc(quizId, currentUser.getId())
                 .orElseThrow(() -> new ResourceNotFoundException("No quiz attempt found for this user"));
