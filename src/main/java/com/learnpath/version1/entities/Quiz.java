@@ -26,6 +26,19 @@ public class Quiz {
     @JoinColumn(name = "module_id")
     private SyllabusModule module;
 
+    @Column(length = 200)
+    private String title;
+
+    @Column(columnDefinition = "TEXT")
+    private String description;
+
+    /**
+     * Nullable to allow legacy database records to be handled safely.
+     * Service logic must use 70 when this field is null.
+     */
+    @Builder.Default
+    private Integer passMarkPercent = 70;
+
     @OneToMany(mappedBy = "quiz", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("id ASC")
     @Builder.Default
