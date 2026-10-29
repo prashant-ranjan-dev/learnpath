@@ -14,12 +14,10 @@ import com.learnpath.version1.entities.Quiz;
 import com.learnpath.version1.exception.AiResponseParsingException;
 import com.learnpath.version1.exception.ResourceNotFoundException;
 import com.learnpath.version1.repositories.SyllabusRepository;
-import com.learnpath.version1.repositories.UserRepository;
 import com.learnpath.version1.repositories.QuizAttemptRepository;
 import com.learnpath.version1.repositories.QuizRepository;
+import com.learnpath.version1.utility.UserContext;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.core.JacksonException;
@@ -40,28 +38,24 @@ public class SyllabusService {
         private final ChatClient chatClient;
         private final SyllabusRepository syllabusRepository;
         private final ObjectMapper objectMapper;
-        private final UserRepository userRepository;
+        private final UserContext userContext;
         private final QuizRepository quizRepository;
         private final QuizAttemptRepository quizAttemptRepository;
 
-        public SyllabusService(ChatClient.Builder chatClientBuilder,
+        public SyllabusService(
+                        ChatClient.Builder chatClientBuilder,
                         SyllabusRepository syllabusRepository,
                         ObjectMapper objectMapper,
-                        UserRepository userRepository, QuizRepository quizRepository,
+                        UserContext userContext,
+                        QuizRepository quizRepository,
                         QuizAttemptRepository quizAttemptRepository) {
+
                 this.chatClient = chatClientBuilder.build();
                 this.syllabusRepository = syllabusRepository;
                 this.objectMapper = objectMapper;
-                this.userRepository = userRepository;
+                this.userContext = userContext;
                 this.quizRepository = quizRepository;
                 this.quizAttemptRepository = quizAttemptRepository;
-        }
-
-        private User getCurrentUser() {
-                Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-                String email = authentication.getName();
-                return userRepository.findByEmail(email)
-                                .orElseThrow(() -> new RuntimeException("Authenticated user not found"));
         }
 
         private Syllabus.Depth mapDepthLevel(String depthLevel) {
@@ -178,7 +172,7 @@ public class SyllabusService {
                                 .currentUnderstanding(mapCurrentUnderstanding(request.currentUnderstanding()))
                                 .depthLevel(mapDepthLevel(request.depthLevel()))
                                 .goal(request.goal())
-                                .user(getCurrentUser())
+                                .user(userContext.getCurrentUser())
                                 .modules(new ArrayList<>())
                                 .build();
 
