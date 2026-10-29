@@ -303,12 +303,32 @@ public class QuizService {
 
         int score = 0;
         List<Integer> correctIndices = new ArrayList<>();
+        List<QuizResultResponse.QuestionReview> review = new ArrayList<>();
+
         for (int i = 0; i < questions.size(); i++) {
-            int correct = questions.get(i).getCorrectOptionIndex();
-            correctIndices.add(correct);
-            if (submission.answers().get(i) == correct) {
+            QuizQuestion question = questions.get(i);
+
+            int selectedAnswer = submission.answers().get(i);
+            int correctAnswer = question.getCorrectOptionIndex();
+            boolean isCorrect = selectedAnswer == correctAnswer;
+
+            correctIndices.add(correctAnswer);
+
+            if (isCorrect) {
                 score++;
             }
+
+            review.add(new QuizResultResponse.QuestionReview(
+                    question.getId(),
+                    question.getQuestionText(),
+                    List.of(
+                            question.getOptionA(),
+                            question.getOptionB(),
+                            question.getOptionC(),
+                            question.getOptionD()),
+                    selectedAnswer,
+                    correctAnswer,
+                    isCorrect));
         }
 
         boolean passed = (score * 100.0 / questions.size()) > 70.0;
@@ -319,11 +339,19 @@ public class QuizService {
                 .score(score)
                 .totalQuestions(questions.size())
                 .passed(passed)
-                .userAnswersJson(objectMapper.valueToTree(submission.answers()).toString())
+                .userAnswersJson(
+                        objectMapper.valueToTree(submission.answers()).toString())
                 .build();
+
         attemptRepository.save(attempt);
 
-        return new QuizResultResponse(score, questions.size(), passed, correctIndices);
+        return new QuizResultResponse(
+                score,
+                questions.size(),
+                passed,
+                correctIndices,
+                review);
+
     }
 
     private void verifyModuleUnlocked(SyllabusModule module, Long userId) {
