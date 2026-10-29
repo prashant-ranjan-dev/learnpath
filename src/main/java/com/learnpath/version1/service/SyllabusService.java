@@ -60,6 +60,24 @@ public class SyllabusService {
                 .orElseThrow(() -> new RuntimeException("Authenticated user not found"));
     }
 
+    private Syllabus.Depth mapDepthLevel(String depthLevel) {
+        return switch (depthLevel.trim().toLowerCase()) {
+            case "foundations" -> Syllabus.Depth.LEVEL1;
+            case "proficient" -> Syllabus.Depth.LEVEL3;
+            case "mastery" -> Syllabus.Depth.LEVEL5;
+
+            // Backward compatibility for existing clients.
+            case "level1" -> Syllabus.Depth.LEVEL1;
+            case "level2" -> Syllabus.Depth.LEVEL2;
+            case "level3" -> Syllabus.Depth.LEVEL3;
+            case "level4" -> Syllabus.Depth.LEVEL4;
+            case "level5" -> Syllabus.Depth.LEVEL5;
+
+            default -> throw new IllegalArgumentException(
+                    "Invalid depth level. Use Foundations, Proficient, or Mastery.");
+        };
+    }
+
     @Transactional
     public SyllabusResponse generateSyllabus(SyllabusRequest request) {
         // Build the prompt
@@ -88,7 +106,7 @@ public class SyllabusService {
         Syllabus syllabus = Syllabus.builder()
                 .topic(request.topic())
                 .currentUnderstanding(Syllabus.CurrentUnderstanding.valueOf(request.currentUnderstanding()))
-                .depthLevel(Syllabus.Depth.valueOf(request.depthLevel()))
+                .depthLevel(mapDepthLevel(request.depthLevel()))
                 .goal(request.goal())
                 .user(getCurrentUser())
                 .modules(new ArrayList<>())
