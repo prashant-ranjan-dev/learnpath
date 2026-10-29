@@ -82,6 +82,26 @@ public class SyllabusService {
                 };
         }
 
+        private Syllabus.CurrentUnderstanding mapCurrentUnderstanding(String currentUnderstanding) {
+                if (currentUnderstanding == null || currentUnderstanding.isBlank()) {
+                        throw new IllegalArgumentException(
+                                        "Current understanding is required. Use Beginner, Intermediate, or Pro.");
+                }
+
+                return switch (currentUnderstanding.trim().toLowerCase()) {
+                        case "beginner" -> Syllabus.CurrentUnderstanding.BEGINNER;
+                        case "intermediate" -> Syllabus.CurrentUnderstanding.INTERMEDIATE;
+                        case "pro", "expert" -> Syllabus.CurrentUnderstanding.EXPERT;
+
+                        // Backward compatibility for existing API clients.
+                        case "beginner_level" -> Syllabus.CurrentUnderstanding.BEGINNER;
+                        case "intermediate_level" -> Syllabus.CurrentUnderstanding.INTERMEDIATE;
+
+                        default -> throw new IllegalArgumentException(
+                                        "Invalid current understanding. Use Beginner, Intermediate, or Pro.");
+                };
+        }
+
         private void validateAiSyllabus(AiSyllabusResponse response) {
                 if (response == null
                                 || response.modules() == null
@@ -155,8 +175,7 @@ public class SyllabusService {
 
                 Syllabus syllabus = Syllabus.builder()
                                 .topic(request.topic())
-                                .currentUnderstanding(
-                                                Syllabus.CurrentUnderstanding.valueOf(request.currentUnderstanding()))
+                                .currentUnderstanding(mapCurrentUnderstanding(request.currentUnderstanding()))
                                 .depthLevel(mapDepthLevel(request.depthLevel()))
                                 .goal(request.goal())
                                 .user(getCurrentUser())
