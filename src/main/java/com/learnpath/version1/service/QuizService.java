@@ -1,3 +1,4 @@
+
 package com.learnpath.version1.service;
 
 import com.learnpath.version1.dto.*;
@@ -6,698 +7,802 @@ import com.learnpath.version1.exception.ResourceNotFoundException;
 import com.learnpath.version1.repositories.ModuleRepository;
 import com.learnpath.version1.repositories.QuizAttemptRepository;
 import com.learnpath.version1.repositories.QuizRepository;
-import com.learnpath.version1.repositories.TopicRepository;
 import com.learnpath.version1.utility.UserContext;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.security.access.AccessDeniedException;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
+import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @Service
 public class QuizService {
 
-        private final ModuleRepository moduleRepository;
-        private final TopicRepository topicRepository;
-        private final QuizRepository quizRepository;
-        private final QuizAttemptRepository attemptRepository;
-        private final ChatClient chatClient;
-        private final ObjectMapper objectMapper;
-        private final UserContext userContext;
+    private static final int DEFAULT_PASS_MARK_PERCENT = 70;
+    private static final int REQUIRED_QUESTION_COUNT = 5;
 
-        public QuizService(ModuleRepository moduleRepository,
-                        TopicRepository topicRepository,
-                        QuizRepository quizRepository,
-                        QuizAttemptRepository attemptRepository,
-                        ChatClient.Builder chatClientBuilder,
-                        ObjectMapper objectMapper,
-                        UserContext userContext) {
-                this.moduleRepository = moduleRepository;
-                this.topicRepository = topicRepository;
-                this.quizRepository = quizRepository;
-                this.attemptRepository = attemptRepository;
-                this.chatClient = chatClientBuilder.build();
-                this.objectMapper = objectMapper;
-                this.userContext = userContext;
-        }
-        /*
-         * public QuizResponse generateQuiz(Long moduleId) {
-         * // temporary test: return hardcoded quiz
-         * List<QuestionDto> questions = List.of(
-         * new QuestionDto(1L, "Test Q", "A", "B", "C", "D")
-         * );
-         * return new QuizResponse(1L, questions);
-         * }
-         */
+    private final ModuleRepository moduleRepository;
+    private final QuizRepository quizRepository;
+    private final QuizAttemptRepository attemptRepository;
+    private final ChatClient chatClient;
+    private final ObjectMapper objectMapper;
+    private final UserContext userContext;
 
-        @Transactional
-        public QuizResponse generateQuiz(Long moduleId) {
-                User currentUser = userContext.getCurrentUser();
+    public QuizService(
+            ModuleRepository moduleRepository,
+            QuizRepository quizRepository,
+            QuizAttemptRepository attemptRepository,
+            ChatClient.Builder chatClientBuilder,
+            ObjectMapper objectMapper,
+            UserContext userContext) {
+        this.moduleRepository = moduleRepository;
+        this.quizRepository = quizRepository;
+        this.attemptRepository = attemptRepository;
+        this.chatClient = chatClientBuilder.build();
+        this.objectMapper = objectMapper;
+        this.userContext = userContext;
+    }
 
-                SyllabusModule module = moduleRepository.findById(moduleId)
-                                .orElseThrow(() -> new ResourceNotFoundException("Module not found"));
+    @Transactional
+    public QuizResponse generateQuiz(Long moduleId) {
+        User currentUser = userContext.getCurrentUser();
 
-                if (!module.getSyllabus().getUser().getId()
-                                .equals(currentUser.getId())) {
-                        throw new AccessDeniedException(
-                                        "You do not have permission to access this module");
-                }
+        SyllabusModule module = moduleRepository.findById(moduleId)
+                .orElseThrow(() -> new ResourceNotFoundException("Module not found"));
 
-                verifyModuleUnlocked(module, currentUser.getId());
-
-                // A quiz is available only after every topic is completed.
-                List<Topic> topics = module.getTopics();
-
-                if (topics == null || topics.isEmpty()) {
-                        throw new IllegalStateException(
-                                        "This module has no topics and cannot be quizzed.");
-                }
-
-                boolean allTopicsCompleted = topics.stream()
-                                .allMatch(Topic::isCompleted);
-
-                if (!allTopicsCompleted) {
-                        throw new IllegalStateException(
-                                        "Complete all topics in this module before accessing the quiz.");
-                }
-
-                // Prevent duplicate AI generation and database constraints
-                Optional<Quiz> existingQuiz = quizRepository.findByModuleId(moduleId);
-                if (existingQuiz.isPresent()) {
-                        Quiz quiz = existingQuiz.get();
-                        List<QuizQuestion> existingQuestions = quiz.getQuestions();
-
-                        if (existingQuestions == null || existingQuestions.isEmpty()) {
-                                throw new IllegalStateException(
-                                                "The existing quiz has no questions and cannot be accessed.");
-                        }
-
-                        if (existingQuestions.stream().anyMatch(q -> q == null)) {
-                                throw new IllegalStateException(
-                                                "The existing quiz contains an invalid question and cannot be accessed.");
-                        }
-
-                        List<QuestionDto> questionDtos = existingQuestions.stream()
-                                        .map(q -> new QuestionDto(q.getId(), q.getQuestionText(),
-                                                        q.getOptionA(), q.getOptionB(), q.getOptionC(), q.getOptionD()))
-                                        .toList();
-
-                        return new QuizResponse(quiz.getId(), questionDtos);
-                }
-
-                // Collect content of all topics in this module
-                List<Topic> topicsList = module.getTopics();
-                StringBuilder contentBuilder = new StringBuilder();
-                for (Topic t : topicsList) {
-                        if (t.getContent() == null || t.getContent().isBlank()) {
-                                throw new IllegalStateException(
-                                                "Topic '" + t.getName() + "' has no content. View Content first.");
-                        }
-                        contentBuilder.append("### ").append(t.getName()).append("\n").append(t.getContent())
-                                        .append("\n\n");
-                }
-
-                String prompt = """
-                                You are an expert educator. Using the learning content below, create a 5-question multiple-choice quiz.
-                                            Each question must have 4 options (A, B, C, D) and the index of the correct answer (0 for A, 1 for B, etc.).
-
-                                            Content:
-                                            %s
-
-                                            Return ONLY a JSON array in the following format:
-                                            [
-                                              {
-                                                "questionText": "What is ...?",
-                                                "optionA": "...",
-                                                "optionB": "...",
-                                                "optionC": "...",
-                                                "optionD": "...",
-                                                "correctOptionIndex": 0
-                                              }
-                                            ]
-                                            Do not include any markdown fences or extra text.
-                                """
-                                .formatted(contentBuilder.toString());
-
-                String aiOutput = chatClient.prompt()
-                                .system("You are an expert quiz maker. Always respond with raw JSON.")
-                                .user(prompt)
-                                .call()
-                                .content();
-
-                if (aiOutput == null || aiOutput.isBlank()) {
-                        throw new IllegalStateException(
-                                        "AI returned an empty quiz response.");
-                }
-
-                List<AiQuestion> aiQuestions;
-                try {
-                        String json = extractJson(aiOutput);
-                        aiQuestions = objectMapper.readValue(
-                                        json,
-                                        new TypeReference<List<AiQuestion>>() {
-                                        });
-
-                        if (aiQuestions == null || aiQuestions.size() != 5) {
-                                throw new IllegalArgumentException(
-                                                "AI must generate exactly 5 quiz questions.");
-                        }
-
-                        for (AiQuestion question : aiQuestions) {
-                                if (question == null
-                                                || question.questionText() == null
-                                                || question.questionText().isBlank()
-                                                || question.optionA() == null || question.optionA().isBlank()
-                                                || question.optionB() == null || question.optionB().isBlank()
-                                                || question.optionC() == null || question.optionC().isBlank()
-                                                || question.optionD() == null || question.optionD().isBlank()
-                                                || question.correctOptionIndex() == null
-                                                || question.correctOptionIndex() < 0
-                                                || question.correctOptionIndex() > 3) {
-                                        throw new IllegalArgumentException(
-                                                        "AI generated an invalid quiz question or answer.");
-                                }
-                        }
-                } catch (Exception e) {
-                        throw new RuntimeException(
-                                        "Failed to parse or validate quiz JSON.", e);
-                }
-
-                Quiz quiz = Quiz.builder().module(module).build();
-                List<QuizQuestion> questions = new ArrayList<>();
-
-                for (AiQuestion aiQ : aiQuestions) {
-                        QuizQuestion q = QuizQuestion.builder()
-                                        .quiz(quiz)
-                                        .questionText(aiQ.questionText())
-                                        .optionA(aiQ.optionA())
-                                        .optionB(aiQ.optionB())
-                                        .optionC(aiQ.optionC())
-                                        .optionD(aiQ.optionD())
-                                        .correctOptionIndex(aiQ.correctOptionIndex()) // CRITICAL FIX
-                                        .build();
-                        questions.add(q);
-                }
-
-                quiz.setQuestions(questions);
-                quizRepository.save(quiz);
-
-                List<QuestionDto> questionDtos = questions.stream()
-                                .map(q -> new QuestionDto(q.getId(), q.getQuestionText(),
-                                                q.getOptionA(), q.getOptionB(), q.getOptionC(), q.getOptionD()))
-                                .toList();
-
-                return new QuizResponse(quiz.getId(), questionDtos);
+        if (!module.getSyllabus().getUser().getId().equals(currentUser.getId())) {
+            throw new AccessDeniedException(
+                    "You do not have permission to access this module");
         }
 
-        @Transactional(readOnly = true)
-        public QuizResponse getQuiz(Long quizId) {
-                User currentUser = userContext.getCurrentUser();
+        verifyModuleUnlocked(module, currentUser.getId());
+        verifyAllTopicsCompleted(module,
+                "Complete all topics in this module before accessing the quiz.");
 
-                Quiz quiz = quizRepository.findById(quizId)
-                                .orElseThrow(() -> new ResourceNotFoundException("Quiz not found"));
+        Optional<Quiz> existingQuiz = quizRepository.findByModuleId(moduleId);
 
-                verifyQuizOwnership(quiz, currentUser);
-                verifyModuleUnlocked(quiz.getModule(), currentUser.getId());
-
-                List<Topic> topics = quiz.getModule().getTopics();
-
-                if (topics == null
-                                || topics.isEmpty()
-                                || topics.stream().anyMatch(topic -> !topic.isCompleted())) {
-                        throw new IllegalStateException(
-                                        "Complete all topics in this module before accessing the quiz.");
-                }
-
-                List<QuizQuestion> questions = quiz.getQuestions();
-
-                if (questions == null || questions.isEmpty()) {
-                        throw new IllegalStateException(
-                                        "This quiz has no questions and cannot be accessed.");
-                }
-
-                List<QuestionDto> questionDtos = questions.stream()
-                                .map(q -> new QuestionDto(
-                                                q.getId(),
-                                                q.getQuestionText(),
-                                                q.getOptionA(),
-                                                q.getOptionB(),
-                                                q.getOptionC(),
-                                                q.getOptionD()))
-                                .toList();
-
-                return new QuizResponse(quiz.getId(), questionDtos);
+        if (existingQuiz.isPresent()) {
+            Quiz quiz = existingQuiz.get();
+            validateQuizQuestions(quiz, "accessed");
+            return toQuizResponse(quiz);
         }
 
-        @Transactional
-        public QuizResultResponse submitQuiz(Long quizId, QuizSubmissionRequest submission) {
-                User currentUser = userContext.getCurrentUser();
-                Quiz quiz = quizRepository.findById(quizId)
-                                .orElseThrow(() -> new ResourceNotFoundException("Quiz not Found"));
+        List<Topic> topics = module.getTopics();
+        StringBuilder contentBuilder = new StringBuilder();
 
-                verifyQuizOwnership(quiz, currentUser);
-                verifyModuleUnlocked(quiz.getModule(), currentUser.getId());
+        for (Topic topic : topics) {
+            if (topic.getContent() == null || topic.getContent().isBlank()) {
+                throw new IllegalStateException(
+                        "Topic '" + topic.getName()
+                                + "' has no content. View Content first.");
+            }
 
-                SyllabusModule module = quiz.getModule();
-                List<Topic> moduleTopics = module.getTopics();
+            contentBuilder.append("### ")
+                    .append(topic.getName())
+                    .append("\n")
+                    .append(topic.getContent())
+                    .append("\n\n");
+        }
 
-                if (moduleTopics == null
-                                || moduleTopics.isEmpty()
-                                || moduleTopics.stream().anyMatch(topic -> !topic.isCompleted())) {
-                        throw new IllegalStateException(
-                                        "Complete all topics in this module before submitting the quiz.");
-                }
+        String prompt = """
+                You are an expert educator. Create exactly five multiple-choice
+                questions using the learning content below.
 
-                List<QuizQuestion> questions = quiz.getQuestions();
+                Each question must contain four non-empty options (A, B, C, D),
+                the correctOptionIndex (0 for A, 1 for B, 2 for C, 3 for D),
+                and an explanation that briefly explains why the correct answer
+                is correct.
 
-                if (questions == null || questions.isEmpty()) {
-                        throw new IllegalStateException(
-                                        "This quiz has no questions and cannot be submitted.");
-                }
+                Learning content:
+                %s
 
-                if (questions.stream().anyMatch(q -> q == null)) {
-                        throw new IllegalStateException(
-                                        "This quiz contains an invalid question and cannot be submitted.");
-                }
+                Return ONLY a JSON array in this format:
+                [
+                  {
+                    "questionText": "Question text",
+                    "optionA": "Option A",
+                    "optionB": "Option B",
+                    "optionC": "Option C",
+                    "optionD": "Option D",
+                    "correctOptionIndex": 0,
+                    "explanation": "Explanation of the correct answer"
+                  }
+                ]
 
-                if (submission == null || submission.answers() == null) {
-                        throw new IllegalArgumentException(
-                                        "Quiz submission and answers are required.");
-                }
+                Do not include Markdown fences or additional text.
+                """.formatted(contentBuilder);
 
-                if (questions.size() != submission.answers().size()) {
-                        throw new IllegalArgumentException(
-                                        "Number of answers does not match the number of questions.");
-                }
+        String aiOutput = chatClient.prompt()
+                .system("You are an expert quiz maker. Always respond with raw JSON.")
+                .user(prompt)
+                .call()
+                .content();
 
-                java.util.Map<Long, Integer> answersByQuestionId = new java.util.HashMap<>();
+        if (aiOutput == null || aiOutput.isBlank()) {
+            throw new IllegalStateException("AI returned an empty quiz response.");
+        }
 
-                for (QuizSubmissionRequest.Answer answer : submission.answers()) {
-                        if (answer == null
-                                        || answer.questionId() == null
-                                        || answer.selectedIndex() == null
-                                        || answer.selectedIndex() < 0
-                                        || answer.selectedIndex() > 3) {
-                                throw new IllegalArgumentException(
-                                                "Each answer must include a question ID and a valid option index from 0 to 3.");
-                        }
+        List<AiQuestion> aiQuestions;
 
-                        boolean belongsToQuiz = questions.stream()
-                                        .anyMatch(q -> q.getId().equals(answer.questionId()));
+        try {
+            aiQuestions = objectMapper.readValue(
+                    extractJson(aiOutput),
+                    new TypeReference<List<AiQuestion>>() {});
 
-                        if (!belongsToQuiz) {
-                                throw new IllegalArgumentException(
-                                                "A submitted question does not belong to this quiz.");
-                        }
+            validateGeneratedQuestions(aiQuestions);
+        } catch (Exception e) {
+            throw new IllegalStateException(
+                    "Failed to parse or validate quiz JSON.", e);
+        }
 
-                        if (answersByQuestionId.putIfAbsent(
-                                        answer.questionId(), answer.selectedIndex()) != null) {
-                                throw new IllegalArgumentException(
-                                                "Duplicate answers for the same question are not allowed.");
-                        }
-                }
+        Quiz quiz = Quiz.builder()
+                .module(module)
+                .title("Module Quiz")
+                .description("Test your understanding of this module.")
+                .passMarkPercent(DEFAULT_PASS_MARK_PERCENT)
+                .build();
 
-                if (answersByQuestionId.size() != questions.size()) {
-                        throw new IllegalArgumentException(
-                                        "An answer is required for every quiz question.");
-                }
+        List<QuizQuestion> questions = new ArrayList<>();
 
-                int score = 0;
-                List<Integer> orderedAnswers = new ArrayList<>();
-                List<Integer> correctIndices = new ArrayList<>();
-                List<QuizResultResponse.QuestionReview> review = new ArrayList<>();
+        for (AiQuestion aiQuestion : aiQuestions) {
+            QuizQuestion question = QuizQuestion.builder()
+                    .quiz(quiz)
+                    .questionText(aiQuestion.questionText())
+                    .optionA(aiQuestion.optionA())
+                    .optionB(aiQuestion.optionB())
+                    .optionC(aiQuestion.optionC())
+                    .optionD(aiQuestion.optionD())
+                    .correctOptionIndex(aiQuestion.correctOptionIndex())
+                    .explanation(aiQuestion.explanation())
+                    .build();
 
-                for (QuizQuestion question : questions) {
-                        int selectedAnswer = answersByQuestionId.get(question.getId());
-                        int correctAnswer = question.getCorrectOptionIndex();
-                        boolean isCorrect = selectedAnswer == correctAnswer;
+            questions.add(question);
+        }
 
-                        orderedAnswers.add(selectedAnswer);
-                        correctIndices.add(correctAnswer);
+        quiz.setQuestions(questions);
+        quizRepository.save(quiz);
 
-                        if (isCorrect) {
-                                score++;
-                        }
+        return toQuizResponse(quiz);
+    }
 
-                        review.add(new QuizResultResponse.QuestionReview(
-                                        question.getId(),
-                                        question.getQuestionText(),
-                                        List.of(
-                                                        question.getOptionA(),
-                                                        question.getOptionB(),
-                                                        question.getOptionC(),
-                                                        question.getOptionD()),
-                                        selectedAnswer,
-                                        correctAnswer,
-                                        isCorrect));
-                }
+    @Transactional(readOnly = true)
+    public QuizResponse getQuiz(Long quizId) {
+        Quiz quiz = getAccessibleQuiz(quizId);
+        validateQuizQuestions(quiz, "accessed");
+        return toQuizResponse(quiz);
+    }
 
-                boolean passed = (score * 100.0 / questions.size()) >= 70.0;
+    /**
+     * Starts an attempt or returns the user's existing in-progress attempt.
+     * Repeated start requests therefore do not create duplicate active attempts.
+     */
+    @Transactional
+    public QuizAttemptStartResponse startAttempt(Long quizId) {
+        User currentUser = userContext.getCurrentUser();
+        Quiz quiz = getAccessibleQuiz(quizId);
 
-                QuizAttempt attempt = QuizAttempt.builder()
-                                .quiz(quiz)
-                                .user(currentUser)
-                                .score(score)
-                                .totalQuestions(questions.size())
-                                .passed(passed)
-                                .userAnswersJson(
-                                                objectMapper.valueToTree(orderedAnswers).toString())
-                                .build();
+        validateQuizQuestions(quiz, "started");
 
+        Optional<QuizAttempt> activeAttempt =
+                attemptRepository
+                        .findFirstByQuizIdAndUserIdAndUserAnswersJsonIsNullOrderByStartedAtDesc(
+                                quizId, currentUser.getId());
+
+        if (activeAttempt.isPresent()) {
+            QuizAttempt attempt = activeAttempt.get();
+
+            if (attempt.getStartedAt() == null) {
+                attempt.setStartedAt(
+                        attempt.getAttemptedAt() != null
+                                ? attempt.getAttemptedAt()
+                                : LocalDateTime.now());
                 attemptRepository.save(attempt);
+            }
 
-                return new QuizResultResponse(
-                                score,
-                                questions.size(),
-                                passed,
-                                correctIndices,
-                                review);
-
+            return new QuizAttemptStartResponse(
+                    attempt.getId(),
+                    quiz.getId(),
+                    attempt.getStartedAt());
         }
 
-        private void verifyModuleUnlocked(SyllabusModule module, Long userId) {
-                List<SyllabusModule> modules = module.getSyllabus().getModules();
-                int currentIndex = -1;
+        LocalDateTime now = LocalDateTime.now();
 
-                for (int i = 0; i < modules.size(); i++) {
-                        if (modules.get(i).getId().equals(module.getId())) {
-                                currentIndex = i;
-                                break;
-                        }
-                }
+        QuizAttempt attempt = QuizAttempt.builder()
+                .quiz(quiz)
+                .user(currentUser)
+                .score(0)
+                .totalQuestions(quiz.getQuestions().size())
+                .passed(false)
+                .startedAt(now)
+                .build();
 
-                if (currentIndex == -1) {
-                        throw new IllegalStateException(
-                                        "Module does not belong to the syllabus.");
-                }
+        attemptRepository.save(attempt);
 
-                // The first module is always unlocked.
-                if (currentIndex == 0) {
-                        return;
-                }
+        return new QuizAttemptStartResponse(
+                attempt.getId(),
+                quiz.getId(),
+                attempt.getStartedAt());
+    }
 
-                SyllabusModule previousModule = modules.get(currentIndex - 1);
+    @Transactional
+    public QuizResultResponse submitQuiz(
+            Long quizId,
+            QuizSubmissionRequest submission) {
 
-                boolean previousModulePassed = quizRepository
-                                .findByModuleId(previousModule.getId())
-                                .map(Quiz::getId)
-                                .map(quizId -> attemptRepository
-                                                .existsByQuizIdAndUserIdAndPassedTrue(quizId, userId))
-                                .orElse(false);
+        User currentUser = userContext.getCurrentUser();
+        Quiz quiz = getAccessibleQuiz(quizId);
+        validateQuizQuestions(quiz, "submitted");
 
-                if (!previousModulePassed) {
-                        throw new IllegalStateException(
-                                        "Complete the previous module and pass its quiz to unlock this module.");
-                }
+        List<QuizQuestion> questions = quiz.getQuestions();
+
+        if (submission == null || submission.answers() == null) {
+            throw new IllegalArgumentException(
+                    "Quiz submission and answers are required.");
         }
 
-        @Transactional(readOnly = true)
-        public QuizResultResponse getQuizResult(Long quizId) {
-                User currentUser = userContext.getCurrentUser();
-
-                Quiz quiz = quizRepository.findById(quizId)
-                                .orElseThrow(() -> new ResourceNotFoundException("Quiz not found"));
-
-                verifyQuizOwnership(quiz, currentUser);
-
-                QuizAttempt attempt = attemptRepository
-                                .findFirstByQuizIdAndUserIdOrderByAttemptedAtDesc(
-                                                quizId, currentUser.getId())
-                                .orElseThrow(() -> new ResourceNotFoundException(
-                                                "No quiz attempt found for this user"));
-
-                List<QuizQuestion> questions = quiz.getQuestions();
-
-                if (questions == null || questions.isEmpty()
-                                || questions.stream().anyMatch(q -> q == null)) {
-                        throw new IllegalStateException(
-                                        "Quiz questions are unavailable for result review.");
-                }
-
-                List<Integer> userAnswers;
-                try {
-                        userAnswers = objectMapper.readValue(
-                                        attempt.getUserAnswersJson(),
-                                        new TypeReference<List<Integer>>() {
-                                        });
-                } catch (Exception e) {
-                        throw new IllegalStateException(
-                                        "Unable to read the saved quiz answers.", e);
-                }
-
-                if (userAnswers == null
-                                || userAnswers.size() != questions.size()
-                                || attempt.getTotalQuestions() != questions.size()) {
-                        throw new IllegalStateException(
-                                        "Saved quiz answers do not match the quiz questions.");
-                }
-
-                List<Integer> correctIndices = new ArrayList<>();
-                List<QuizResultResponse.QuestionReview> review = new ArrayList<>();
-
-                for (int i = 0; i < questions.size(); i++) {
-                        QuizQuestion question = questions.get(i);
-                        Integer selectedAnswer = userAnswers.get(i);
-                        int correctAnswer = question.getCorrectOptionIndex();
-
-                        if (selectedAnswer == null
-                                        || selectedAnswer < 0
-                                        || selectedAnswer > 3
-                                        || correctAnswer < 0
-                                        || correctAnswer > 3) {
-                                throw new IllegalStateException(
-                                                "Saved quiz data contains an invalid answer.");
-                        }
-
-                        correctIndices.add(correctAnswer);
-
-                        review.add(new QuizResultResponse.QuestionReview(
-                                        question.getId(),
-                                        question.getQuestionText(),
-                                        List.of(
-                                                        question.getOptionA(),
-                                                        question.getOptionB(),
-                                                        question.getOptionC(),
-                                                        question.getOptionD()),
-                                        selectedAnswer,
-                                        correctAnswer,
-                                        selectedAnswer == correctAnswer));
-                }
-
-                return new QuizResultResponse(
-                                attempt.getScore(),
-                                attempt.getTotalQuestions(),
-                                attempt.isPassed(),
-                                correctIndices,
-                                review);
+        if (submission.answers().size() != questions.size()) {
+            throw new IllegalArgumentException(
+                    "Number of answers does not match the number of questions.");
         }
 
-        private void verifyQuizOwnership(Quiz quiz, User currentUser) {
-                Long ownerId = quiz.getModule()
-                                .getSyllabus()
-                                .getUser()
-                                .getId();
+        Map<Long, Integer> answersByQuestionId = new HashMap<>();
 
-                if (!ownerId.equals(currentUser.getId())) {
-                        throw new AccessDeniedException(
-                                        "You do not have permission to access this quiz");
-                }
+        for (QuizSubmissionRequest.Answer answer : submission.answers()) {
+            if (answer == null
+                    || answer.questionId() == null
+                    || answer.selectedIndex() == null
+                    || answer.selectedIndex() < 0
+                    || answer.selectedIndex() > 3) {
+                throw new IllegalArgumentException(
+                        "Each answer must include a question ID and a valid option index from 0 to 3.");
+            }
+
+            boolean belongsToQuiz = questions.stream()
+                    .anyMatch(q -> q.getId().equals(answer.questionId()));
+
+            if (!belongsToQuiz) {
+                throw new IllegalArgumentException(
+                        "A submitted question does not belong to this quiz.");
+            }
+
+            if (answersByQuestionId.putIfAbsent(
+                    answer.questionId(), answer.selectedIndex()) != null) {
+                throw new IllegalArgumentException(
+                        "Duplicate answers for the same question are not allowed.");
+            }
         }
 
-        private record AiQuestion(
-                        String questionText,
-                        String optionA,
-                        String optionB,
-                        String optionC,
-                        String optionD,
-                        Integer correctOptionIndex) {
+        if (answersByQuestionId.size() != questions.size()) {
+            throw new IllegalArgumentException(
+                    "An answer is required for every quiz question.");
         }
 
-        @Transactional
-        public WeaknessAnalysisResponse analyzeWeaknesses(Long quizId) {
-                User currentUser = userContext.getCurrentUser();
-                Quiz quiz = quizRepository.findById(quizId)
-                                .orElseThrow(() -> new ResourceNotFoundException("Quiz not Found"));
+        /*
+         * Update an active attempt when the start endpoint was used.
+         * If the frontend has not yet adopted that endpoint, create a
+         * completed attempt as a backwards-compatible fallback.
+         */
+        QuizAttempt attempt = attemptRepository
+                .findFirstByQuizIdAndUserIdAndUserAnswersJsonIsNullOrderByStartedAtDesc(
+                        quizId, currentUser.getId())
+                .orElseGet(() -> QuizAttempt.builder()
+                        .quiz(quiz)
+                        .user(currentUser)
+                        .startedAt(LocalDateTime.now())
+                        .build());
 
-                verifyQuizOwnership(quiz, currentUser);
+        LocalDateTime submittedAt = LocalDateTime.now();
+        LocalDateTime startedAt = attempt.getStartedAt();
 
-                QuizAttempt attempt = attemptRepository
-                                .findFirstByQuizIdAndUserIdOrderByAttemptedAtDesc(quizId, currentUser.getId())
-                                .orElseThrow(() -> new ResourceNotFoundException(
-                                                "No quiz attempt found for this user"));
-
-                List<QuizQuestion> questions = quiz.getQuestions();
-
-                if (questions == null || questions.isEmpty()) {
-                        throw new IllegalStateException(
-                                        "This quiz has no questions for weakness analysis.");
-                }
-
-                if (questions.stream().anyMatch(q -> q == null)) {
-                        throw new IllegalStateException(
-                                        "This quiz contains an invalid question for weakness analysis.");
-                }
-
-                List<Integer> userAnswers;
-                try {
-                        userAnswers = objectMapper.readValue(attempt.getUserAnswersJson(),
-                                        new TypeReference<List<Integer>>() {
-                                        });
-                } catch (Exception e) {
-                        throw new RuntimeException("Failed to parse user answers", e);
-                }
-
-                if (userAnswers == null || userAnswers.size() != questions.size()) {
-                        throw new IllegalStateException(
-                                        "Stored quiz answers do not match the quiz questions.");
-                }
-
-                for (Integer answer : userAnswers) {
-                        if (answer == null || answer < 0 || answer > 3) {
-                                throw new IllegalStateException(
-                                                "Stored quiz answers contain an invalid option index.");
-                        }
-                }
-
-                StringBuilder wrongQuestionsInfo = new StringBuilder();
-                for (int i = 0; i < questions.size(); i++) {
-                        QuizQuestion q = questions.get(i);
-                        if (userAnswers.get(i) != q.getCorrectOptionIndex()) {
-                                wrongQuestionsInfo.append("Q").append(i + 1)
-                                                .append(": ").append(q.getQuestionText()).append("\n")
-                                                .append("Your Answer: ").append(optionLetter(userAnswers.get(i)))
-                                                .append("\n")
-                                                .append("Correct Answer: ")
-                                                .append(optionLetter(q.getCorrectOptionIndex())).append("\n\n");
-                        }
-                }
-
-                if (wrongQuestionsInfo.isEmpty()) {
-                        return new WeaknessAnalysisResponse(List.of());
-                }
-
-                SyllabusModule module = quiz.getModule();
-                List<Topic> analysisTopics = module.getTopics();
-
-                if (analysisTopics == null || analysisTopics.isEmpty()) {
-                        throw new IllegalStateException(
-                                        "This module has no topics for weakness analysis.");
-                }
-
-                StringBuilder topicsContent = new StringBuilder();
-                for (Topic t : analysisTopics) {
-                        if (t.getContent() == null || t.getContent().isBlank()) {
-                                throw new IllegalStateException(
-                                                "Topic '" + t.getName()
-                                                                + "' has no content for weakness analysis.");
-                        }
-
-                        topicsContent.append("### ")
-                                        .append(t.getName())
-                                        .append("\n")
-                                        .append(t.getContent())
-                                        .append("\n\n");
-                }
-
-                String prompt = """
-                                You are an expert educational analyst. A learner has completed a quiz. Here are the questions they answered incorrectly:
-                                            %s
-
-                                            Here is the content of the topics in this module:
-                                            %s
-
-                                            Based on the learner's mistakes and the topic content, identify the weak topics/concepts that the learner should review. For each weak topic, provide:
-                                            - topicName: a short title of the weak topic/concept
-                                            - reason: why the learner struggled (based on the incorrect answers)
-                                            - suggestion: a specific action or resource to improve (e.g., "Review the section on X and practice exercises on Y")
-
-                                            Return ONLY a JSON array in the following format:
-                                            [
-                                              {
-                                                "topicName": "...",
-                                                "reason": "...",
-                                                "suggestion": "..."
-                                              }
-                                            ]
-                                            Do not include any markdown fences or extra text.
-                                """
-                                .formatted(wrongQuestionsInfo.toString(), topicsContent.toString());
-
-                String aiOutput = chatClient.prompt()
-                                .system("You are an expert in analyzing learning gaps. Always respond with raw JSON.")
-                                .user(prompt)
-                                .call()
-                                .content();
-
-                if (aiOutput == null || aiOutput.isBlank()) {
-                        throw new IllegalStateException(
-                                        "AI returned an empty weakness analysis response.");
-                }
-
-                List<WeakTopic> weakTopics;
-                try {
-                        String json = extractJson(aiOutput);
-                        weakTopics = objectMapper.readValue(
-                                        json,
-                                        new TypeReference<List<WeakTopic>>() {
-                                        });
-
-                        if (weakTopics == null) {
-                                throw new IllegalArgumentException(
-                                                "AI returned a null weakness analysis.");
-                        }
-
-                        for (WeakTopic topic : weakTopics) {
-                                if (topic == null
-                                                || topic.topicName() == null
-                                                || topic.topicName().isBlank()
-                                                || topic.reason() == null
-                                                || topic.reason().isBlank()
-                                                || topic.suggestion() == null
-                                                || topic.suggestion().isBlank()) {
-                                        throw new IllegalArgumentException(
-                                                        "AI returned an incomplete weakness analysis entry.");
-                                }
-                        }
-                } catch (Exception e) {
-                        throw new RuntimeException(
-                                        "Failed to parse or validate weakness analysis JSON.", e);
-                }
-
-                return new WeaknessAnalysisResponse(weakTopics);
+        if (startedAt == null) {
+            startedAt = attempt.getAttemptedAt() != null
+                    ? attempt.getAttemptedAt()
+                    : submittedAt;
         }
 
-        private String optionLetter(int idx) {
-                return switch (idx) {
-                        case 0 -> "A";
-                        case 1 -> "B";
-                        case 2 -> "C";
-                        case 3 -> "D";
-                        default -> "?";
-                };
+        long timeTakenSeconds = Math.max(
+                0L, Duration.between(startedAt, submittedAt).getSeconds());
+
+        int score = 0;
+        List<Integer> orderedAnswers = new ArrayList<>();
+        List<Integer> correctIndices = new ArrayList<>();
+        List<QuizResultResponse.QuestionReview> review = new ArrayList<>();
+
+        for (QuizQuestion question : questions) {
+            int selectedAnswer = answersByQuestionId.get(question.getId());
+            int correctAnswer = question.getCorrectOptionIndex();
+            boolean isCorrect = selectedAnswer == correctAnswer;
+
+            orderedAnswers.add(selectedAnswer);
+            correctIndices.add(correctAnswer);
+
+            if (isCorrect) {
+                score++;
+            }
+
+            review.add(new QuizResultResponse.QuestionReview(
+                    question.getId(),
+                    question.getQuestionText(),
+                    List.of(
+                            question.getOptionA(),
+                            question.getOptionB(),
+                            question.getOptionC(),
+                            question.getOptionD()),
+                    selectedAnswer,
+                    correctAnswer,
+                    isCorrect,
+                    question.getExplanation()));
         }
 
-        private String extractJson(String raw) {
+        int passMarkPercent = getPassMarkPercent(quiz);
+        double scorePercent = score * 100.0 / questions.size();
+        boolean passed = scorePercent >= passMarkPercent;
 
-                String trimmed = raw.trim();
-                if (trimmed.startsWith("```")) {
-                        String[] lines = trimmed.split("\n");
-                        if (lines.length >= 3) {
-                                StringBuilder sb = new StringBuilder();
-                                for (int i = 1; i < lines.length - 1; i++) {
-                                        sb.append(lines[i]);
-                                        if (i < lines.length - 2)
-                                                sb.append("\n");
-                                }
-                                return sb.toString().trim();
-                        }
+        attempt.setQuiz(quiz);
+        attempt.setUser(currentUser);
+        attempt.setScore(score);
+        attempt.setTotalQuestions(questions.size());
+        attempt.setPassed(passed);
+        attempt.setStartedAt(startedAt);
+        attempt.setSubmittedAt(submittedAt);
+        attempt.setTimeTakenSeconds(timeTakenSeconds);
+        attempt.setUserAnswersJson(
+                objectMapper.valueToTree(orderedAnswers).toString());
+
+        attemptRepository.save(attempt);
+
+        return new QuizResultResponse(
+                score,
+                questions.size(),
+                passed,
+                correctIndices,
+                review,
+                passMarkPercent,
+                timeTakenSeconds);
+    }
+
+    @Transactional(readOnly = true)
+    public QuizResultResponse getQuizResult(Long quizId) {
+        User currentUser = userContext.getCurrentUser();
+        Quiz quiz = getAccessibleQuiz(quizId);
+
+        QuizAttempt attempt = attemptRepository
+                .findFirstByQuizIdAndUserIdAndUserAnswersJsonIsNotNullOrderByAttemptedAtDesc(
+                        quizId, currentUser.getId())
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "No completed quiz attempt found for this user"));
+
+        return buildResultResponse(quiz, attempt);
+    }
+
+    @Transactional
+    public WeaknessAnalysisResponse analyzeWeaknesses(Long quizId) {
+        User currentUser = userContext.getCurrentUser();
+        Quiz quiz = getAccessibleQuiz(quizId);
+
+        QuizAttempt attempt = attemptRepository
+                .findFirstByQuizIdAndUserIdAndUserAnswersJsonIsNotNullOrderByAttemptedAtDesc(
+                        quizId, currentUser.getId())
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "No completed quiz attempt found for this user"));
+
+        List<QuizQuestion> questions = quiz.getQuestions();
+        validateQuizQuestions(quiz, "analyzed");
+
+        List<Integer> userAnswers = parseStoredAnswers(attempt, questions.size());
+        StringBuilder wrongQuestionsInfo = new StringBuilder();
+
+        for (int i = 0; i < questions.size(); i++) {
+            QuizQuestion question = questions.get(i);
+            int selectedAnswer = userAnswers.get(i);
+
+            if (selectedAnswer != question.getCorrectOptionIndex()) {
+                wrongQuestionsInfo.append("Q")
+                        .append(i + 1)
+                        .append(": ")
+                        .append(question.getQuestionText())
+                        .append("\nYour Answer: ")
+                        .append(optionLetter(selectedAnswer))
+                        .append("\nCorrect Answer: ")
+                        .append(optionLetter(question.getCorrectOptionIndex()))
+                        .append("\n\n");
+            }
+        }
+
+        if (wrongQuestionsInfo.isEmpty()) {
+            return new WeaknessAnalysisResponse(List.of());
+        }
+
+        List<Topic> topics = quiz.getModule().getTopics();
+
+        if (topics == null || topics.isEmpty()) {
+            throw new IllegalStateException(
+                    "This module has no topics for weakness analysis.");
+        }
+
+        StringBuilder topicsContent = new StringBuilder();
+
+        for (Topic topic : topics) {
+            if (topic.getContent() == null || topic.getContent().isBlank()) {
+                throw new IllegalStateException(
+                        "Topic '" + topic.getName()
+                                + "' has no content for weakness analysis.");
+            }
+
+            topicsContent.append("### ")
+                    .append(topic.getName())
+                    .append("\n")
+                    .append(topic.getContent())
+                    .append("\n\n");
+        }
+
+        String prompt = """
+                You are an expert educational analyst.
+
+                Questions answered incorrectly:
+                %s
+
+                Learning content:
+                %s
+
+                Identify the weak topics or concepts the learner should review.
+                For each entry provide:
+                - topicName: short title of the weak concept
+                - reason: why the learner struggled
+                - suggestion: a specific action to improve
+
+                Return ONLY a JSON array:
+                [
+                  {
+                    "topicName": "...",
+                    "reason": "...",
+                    "suggestion": "..."
+                  }
+                ]
+
+                Do not include Markdown fences or extra text.
+                """.formatted(wrongQuestionsInfo, topicsContent);
+
+        String aiOutput = chatClient.prompt()
+                .system(
+                        "You are an expert in analyzing learning gaps. Always respond with raw JSON.")
+                .user(prompt)
+                .call()
+                .content();
+
+        if (aiOutput == null || aiOutput.isBlank()) {
+            throw new IllegalStateException(
+                    "AI returned an empty weakness analysis response.");
+        }
+
+        try {
+            List<WeakTopic> weakTopics = objectMapper.readValue(
+                    extractJson(aiOutput),
+                    new TypeReference<List<WeakTopic>>() {});
+
+            if (weakTopics == null) {
+                throw new IllegalArgumentException(
+                        "AI returned a null weakness analysis.");
+            }
+
+            for (WeakTopic topic : weakTopics) {
+                if (topic == null
+                        || topic.topicName() == null
+                        || topic.topicName().isBlank()
+                        || topic.reason() == null
+                        || topic.reason().isBlank()
+                        || topic.suggestion() == null
+                        || topic.suggestion().isBlank()) {
+                    throw new IllegalArgumentException(
+                            "AI returned an incomplete weakness analysis entry.");
                 }
-                return trimmed;
+            }
+
+            return new WeaknessAnalysisResponse(weakTopics);
+        } catch (Exception e) {
+            throw new IllegalStateException(
+                    "Failed to parse or validate weakness analysis JSON.", e);
+        }
+    }
+
+    private Quiz getAccessibleQuiz(Long quizId) {
+        User currentUser = userContext.getCurrentUser();
+
+        Quiz quiz = quizRepository.findById(quizId)
+                .orElseThrow(() -> new ResourceNotFoundException("Quiz not found"));
+
+        verifyQuizOwnership(quiz, currentUser);
+        verifyModuleUnlocked(quiz.getModule(), currentUser.getId());
+        verifyAllTopicsCompleted(
+                quiz.getModule(),
+                "Complete all topics in this module before accessing the quiz.");
+
+        return quiz;
+    }
+
+    private void verifyAllTopicsCompleted(
+            SyllabusModule module,
+            String errorMessage) {
+
+        List<Topic> topics = module.getTopics();
+
+        if (topics == null
+                || topics.isEmpty()
+                || topics.stream().anyMatch(topic -> !topic.isCompleted())) {
+            throw new IllegalStateException(errorMessage);
+        }
+    }
+
+    private void validateQuizQuestions(Quiz quiz, String action) {
+        List<QuizQuestion> questions = quiz.getQuestions();
+
+        if (questions == null || questions.isEmpty()
+                || questions.stream().anyMatch(q -> q == null)) {
+            throw new IllegalStateException(
+                    "This quiz has no valid questions and cannot be " + action + ".");
         }
 
+        for (QuizQuestion question : questions) {
+            if (question.getCorrectOptionIndex() < 0
+                    || question.getCorrectOptionIndex() > 3
+                    || isBlank(question.getQuestionText())
+                    || isBlank(question.getOptionA())
+                    || isBlank(question.getOptionB())
+                    || isBlank(question.getOptionC())
+                    || isBlank(question.getOptionD())) {
+                throw new IllegalStateException(
+                        "This quiz contains an invalid question and cannot be " + action + ".");
+            }
+        }
+    }
+
+    private void validateGeneratedQuestions(List<AiQuestion> questions) {
+        if (questions == null || questions.size() != REQUIRED_QUESTION_COUNT) {
+            throw new IllegalArgumentException(
+                    "AI must generate exactly five quiz questions.");
+        }
+
+        for (AiQuestion question : questions) {
+            if (question == null
+                    || isBlank(question.questionText())
+                    || isBlank(question.optionA())
+                    || isBlank(question.optionB())
+                    || isBlank(question.optionC())
+                    || isBlank(question.optionD())
+                    || question.correctOptionIndex() == null
+                    || question.correctOptionIndex() < 0
+                    || question.correctOptionIndex() > 3) {
+                throw new IllegalArgumentException(
+                        "AI generated an invalid quiz question or answer.");
+            }
+        }
+    }
+
+    private QuizResponse toQuizResponse(Quiz quiz) {
+        List<QuestionDto> questionDtos = quiz.getQuestions().stream()
+                .map(question -> new QuestionDto(
+                        question.getId(),
+                        question.getQuestionText(),
+                        question.getOptionA(),
+                        question.getOptionB(),
+                        question.getOptionC(),
+                        question.getOptionD()))
+                .toList();
+
+        return new QuizResponse(
+                quiz.getId(),
+                getQuizTitle(quiz),
+                getQuizDescription(quiz),
+                getPassMarkPercent(quiz),
+                questionDtos);
+    }
+
+    private QuizResultResponse buildResultResponse(
+            Quiz quiz,
+            QuizAttempt attempt) {
+
+        List<QuizQuestion> questions = quiz.getQuestions();
+        validateQuizQuestions(quiz, "reviewed");
+
+        List<Integer> userAnswers = parseStoredAnswers(attempt, questions.size());
+        List<Integer> correctIndices = new ArrayList<>();
+        List<QuizResultResponse.QuestionReview> review = new ArrayList<>();
+
+        for (int i = 0; i < questions.size(); i++) {
+            QuizQuestion question = questions.get(i);
+            int selectedAnswer = userAnswers.get(i);
+            int correctAnswer = question.getCorrectOptionIndex();
+
+            correctIndices.add(correctAnswer);
+
+            review.add(new QuizResultResponse.QuestionReview(
+                    question.getId(),
+                    question.getQuestionText(),
+                    List.of(
+                            question.getOptionA(),
+                            question.getOptionB(),
+                            question.getOptionC(),
+                            question.getOptionD()),
+                    selectedAnswer,
+                    correctAnswer,
+                    selectedAnswer == correctAnswer,
+                    question.getExplanation()));
+        }
+
+        Long duration = attempt.getTimeTakenSeconds();
+
+        return new QuizResultResponse(
+                attempt.getScore(),
+                attempt.getTotalQuestions(),
+                attempt.isPassed(),
+                correctIndices,
+                review,
+                getPassMarkPercent(quiz),
+                duration);
+    }
+
+    private List<Integer> parseStoredAnswers(
+            QuizAttempt attempt,
+            int expectedQuestionCount) {
+
+        if (attempt.getUserAnswersJson() == null
+                || attempt.getUserAnswersJson().isBlank()) {
+            throw new IllegalStateException(
+                    "This quiz attempt has not been submitted.");
+        }
+
+        List<Integer> answers;
+
+        try {
+            answers = objectMapper.readValue(
+                    attempt.getUserAnswersJson(),
+                    new TypeReference<List<Integer>>() {});
+        } catch (Exception e) {
+            throw new IllegalStateException(
+                    "Unable to read the saved quiz answers.", e);
+        }
+
+        if (answers == null || answers.size() != expectedQuestionCount
+                || attempt.getTotalQuestions() != expectedQuestionCount) {
+            throw new IllegalStateException(
+                    "Saved quiz answers do not match the quiz questions.");
+        }
+
+        for (Integer answer : answers) {
+            if (answer == null || answer < 0 || answer > 3) {
+                throw new IllegalStateException(
+                        "Saved quiz data contains an invalid answer.");
+            }
+        }
+
+        return answers;
+    }
+
+    private int getPassMarkPercent(Quiz quiz) {
+        Integer passMark = quiz.getPassMarkPercent();
+
+        if (passMark == null) {
+            return DEFAULT_PASS_MARK_PERCENT;
+        }
+
+        if (passMark < 0 || passMark > 100) {
+            throw new IllegalStateException(
+                    "Quiz pass mark must be between 0 and 100.");
+        }
+
+        return passMark;
+    }
+
+    private String getQuizTitle(Quiz quiz) {
+        return isBlank(quiz.getTitle()) ? "Module Quiz" : quiz.getTitle();
+    }
+
+    private String getQuizDescription(Quiz quiz) {
+        return isBlank(quiz.getDescription())
+                ? "Test your understanding of this module."
+                : quiz.getDescription();
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.isBlank();
+    }
+
+    private void verifyModuleUnlocked(SyllabusModule module, Long userId) {
+        List<SyllabusModule> modules = module.getSyllabus().getModules();
+        int currentIndex = -1;
+
+        for (int i = 0; i < modules.size(); i++) {
+            if (modules.get(i).getId().equals(module.getId())) {
+                currentIndex = i;
+                break;
+            }
+        }
+
+        if (currentIndex == -1) {
+            throw new IllegalStateException(
+                    "Module does not belong to the syllabus.");
+        }
+
+        if (currentIndex == 0) {
+            return;
+        }
+
+        SyllabusModule previousModule = modules.get(currentIndex - 1);
+
+        boolean previousModulePassed = quizRepository
+                .findByModuleId(previousModule.getId())
+                .map(Quiz::getId)
+                .map(previousQuizId ->
+                        attemptRepository.existsByQuizIdAndUserIdAndPassedTrue(
+                                previousQuizId, userId))
+                .orElse(false);
+
+        if (!previousModulePassed) {
+            throw new IllegalStateException(
+                    "Complete the previous module and pass its quiz to unlock this module.");
+        }
+    }
+
+    private void verifyQuizOwnership(Quiz quiz, User currentUser) {
+        Long ownerId = quiz.getModule()
+                .getSyllabus()
+                .getUser()
+                .getId();
+
+        if (!ownerId.equals(currentUser.getId())) {
+            throw new AccessDeniedException(
+                    "You do not have permission to access this quiz");
+        }
+    }
+
+    private String optionLetter(int index) {
+        return switch (index) {
+            case 0 -> "A";
+            case 1 -> "B";
+            case 2 -> "C";
+            case 3 -> "D";
+            default -> "?";
+        };
+    }
+
+    private String extractJson(String raw) {
+        String trimmed = raw.trim();
+
+        if (trimmed.startsWith("```")) {
+            String[] lines = trimmed.split("\n");
+
+            if (lines.length >= 3) {
+                StringBuilder builder = new StringBuilder();
+
+                for (int i = 1; i < lines.length - 1; i++) {
+                    builder.append(lines[i]);
+
+                    if (i < lines.length - 2) {
+                        builder.append("\n");
+                    }
+                }
+
+                return builder.toString().trim();
+            }
+        }
+
+        return trimmed;
+    }
+
+    private record AiQuestion(
+            String questionText,
+            String optionA,
+            String optionB,
+            String optionC,
+            String optionD,
+            Integer correctOptionIndex,
+            String explanation) {}
 }
