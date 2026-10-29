@@ -143,7 +143,7 @@ public class SyllabusService {
             aiResponse = objectMapper.readValue(json, AiSyllabusResponse.class);
         } catch (JacksonException e) {
             throw new AiResponseParsingException(
-                    "Failed to parse AI-generated syllabus. Please try again." + e);
+                    "Failed to parse AI-generated syllabus. Please try again.", e);
 
         }
 
