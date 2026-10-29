@@ -10,15 +10,22 @@ import jakarta.validation.constraints.Size;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import com.learnpath.version1.dto.DashboardResponse;
+import com.learnpath.version1.service.SyllabusService;
+
 @RestController
 @RequestMapping("/api/user")
 public class UserController {
     private final UserContext userContext;
+    private final SyllabusService syllabusService;
 
 
-    public UserController(UserContext userContext) {
-        this.userContext = userContext;
-    }
+    public UserController(
+        UserContext userContext,
+        SyllabusService syllabusService) {
+    this.userContext = userContext;
+    this.syllabusService = syllabusService;
+}
 
     @GetMapping("/profile")
     public ResponseEntity<UserProfileResponse> getProfile(){
@@ -26,6 +33,13 @@ public class UserController {
         return ResponseEntity.ok(new UserProfileResponse(user.getName(), user.getEmail()));
 
     }
+
+    @GetMapping("/dashboard")
+public ResponseEntity<DashboardResponse> getDashboard() {
+    User user = userContext.getCurrentUser();
+    return ResponseEntity.ok(
+            syllabusService.getDashboardSummary(user));
+}
 
     @PutMapping("/profile")
     public ResponseEntity<UserProfileResponse> updateProfile(@Valid @RequestBody UpdateProfileRequest request){
