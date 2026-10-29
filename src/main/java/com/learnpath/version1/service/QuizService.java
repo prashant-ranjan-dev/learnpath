@@ -214,6 +214,45 @@ public class QuizService {
         return new QuizResponse(quiz.getId(), questionDtos);
     }
 
+    @Transactional(readOnly = true)
+    public QuizResponse getQuiz(Long quizId) {
+        User currentUser = userContext.getCurrentUser();
+
+        Quiz quiz = quizRepository.findById(quizId)
+                .orElseThrow(() -> new ResourceNotFoundException("Quiz not found"));
+
+        verifyQuizOwnership(quiz, currentUser);
+        verifyModuleUnlocked(quiz.getModule(), currentUser.getId());
+
+        List<Topic> topics = quiz.getModule().getTopics();
+
+        if (topics == null
+                || topics.isEmpty()
+                || topics.stream().anyMatch(topic -> !topic.isCompleted())) {
+            throw new IllegalStateException(
+                    "Complete all topics in this module before accessing the quiz.");
+        }
+
+        List<QuizQuestion> questions = quiz.getQuestions();
+
+        if (questions == null || questions.isEmpty()) {
+            throw new IllegalStateException(
+                    "This quiz has no questions and cannot be accessed.");
+        }
+
+        List<QuestionDto> questionDtos = questions.stream()
+                .map(q -> new QuestionDto(
+                        q.getId(),
+                        q.getQuestionText(),
+                        q.getOptionA(),
+                        q.getOptionB(),
+                        q.getOptionC(),
+                        q.getOptionD()))
+                .toList();
+
+        return new QuizResponse(quiz.getId(), questionDtos);
+    }
+
     @Transactional
     public QuizResultResponse submitQuiz(Long quizId, QuizSubmissionRequest submission) {
         User currentUser = userContext.getCurrentUser();
