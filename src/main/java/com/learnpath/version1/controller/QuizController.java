@@ -1,8 +1,11 @@
+
 package com.learnpath.version1.controller;
 
-import com.learnpath.version1.dto.*;
-import com.learnpath.version1.utility.UserContext;
-import com.learnpath.version1.repositories.QuizRepository;
+import com.learnpath.version1.dto.QuizAttemptStartResponse;
+import com.learnpath.version1.dto.QuizResponse;
+import com.learnpath.version1.dto.QuizResultResponse;
+import com.learnpath.version1.dto.QuizSubmissionRequest;
+import com.learnpath.version1.dto.WeaknessAnalysisResponse;
 import com.learnpath.version1.service.QuizService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -13,41 +16,50 @@ public class QuizController {
 
     private final QuizService quizService;
 
-    public QuizController(QuizService quizService, QuizRepository quizRepository, UserContext userContext) {
+    public QuizController(QuizService quizService) {
         this.quizService = quizService;
     }
 
-    // 1. Generate quiz for a module
     @PostMapping("/modules/{moduleId}")
-    public ResponseEntity<QuizResponse> generateQuiz(@PathVariable Long moduleId) {
-        QuizResponse response = quizService.generateQuiz(moduleId);
-        return ResponseEntity.ok(response);
+    public ResponseEntity<QuizResponse> generateQuiz(
+            @PathVariable Long moduleId
+    ) {
+        return ResponseEntity.ok(quizService.generateQuiz(moduleId));
     }
 
     @GetMapping("/{quizId}")
-    public ResponseEntity<QuizResponse> getQuiz(@PathVariable Long quizId) {
+    public ResponseEntity<QuizResponse> getQuiz(
+            @PathVariable Long quizId
+    ) {
         return ResponseEntity.ok(quizService.getQuiz(quizId));
     }
 
-    // 2. Submit answers for a quiz
+    @PostMapping("/{quizId}/attempts/start")
+    public ResponseEntity<QuizAttemptStartResponse> startAttempt(
+            @PathVariable Long quizId
+    ) {
+        return ResponseEntity.ok(quizService.startAttempt(quizId));
+    }
+
     @PostMapping("/{quizId}/submit")
-    public ResponseEntity<QuizResultResponse> submitQuiz(@PathVariable Long quizId,
-            @RequestBody QuizSubmissionRequest submission) {
-        QuizResultResponse result = quizService.submitQuiz(quizId, submission);
-        return ResponseEntity.ok(result);
+    public ResponseEntity<QuizResultResponse> submitQuiz(
+            @PathVariable Long quizId,
+            @RequestBody QuizSubmissionRequest submission
+    ) {
+        return ResponseEntity.ok(quizService.submitQuiz(quizId, submission));
     }
 
     @GetMapping("/{quizId}/result")
     public ResponseEntity<QuizResultResponse> getQuizResult(
-            @PathVariable Long quizId) {
-        return ResponseEntity.ok(
-                quizService.getQuizResult(quizId));
+            @PathVariable Long quizId
+    ) {
+        return ResponseEntity.ok(quizService.getQuizResult(quizId));
     }
 
     @PostMapping("/{quizId}/analyze")
-    public ResponseEntity<WeaknessAnalysisResponse> analyzeWeaknesses(@PathVariable Long quizId) {
-        WeaknessAnalysisResponse response = quizService.analyzeWeaknesses(quizId);
-        return ResponseEntity.ok(response);
+    public ResponseEntity<WeaknessAnalysisResponse> analyzeWeaknesses(
+            @PathVariable Long quizId
+    ) {
+        return ResponseEntity.ok(quizService.analyzeWeaknesses(quizId));
     }
-
 }
