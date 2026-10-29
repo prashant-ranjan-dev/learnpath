@@ -29,13 +29,39 @@ public class QuizAttempt {
     private User user;
 
     private int score;
+
     private int totalQuestions;
+
     private boolean passed;
 
+    /**
+     * Legacy timestamp retained for compatibility with existing queries
+     * and previously stored attempts.
+     */
     @CreationTimestamp
     @Column(updatable = false)
     private LocalDateTime attemptedAt;
 
+    /**
+     * Explicit start time for the attempt lifecycle.
+     */
+    private LocalDateTime startedAt;
+
+    /**
+     * Null while an attempt is in progress.
+     * Legacy completed attempts may also have null here.
+     */
+    private LocalDateTime submittedAt;
+
+    /**
+     * Duration in whole seconds, calculated when the attempt is submitted.
+     */
+    private Long timeTakenSeconds;
+
+    /**
+     * Canonically ordered selected-option indices, serialized as JSON.
+     * A null value indicates an attempt has not yet been submitted.
+     */
     @Column(columnDefinition = "TEXT")
     private String userAnswersJson;
 }
