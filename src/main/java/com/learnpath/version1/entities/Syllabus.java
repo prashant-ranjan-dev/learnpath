@@ -8,7 +8,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 @Entity
-@Table(name= "syllabus")
+@Table(name = "syllabus")
 @Getter
 @Setter
 @Builder
@@ -17,12 +17,14 @@ import java.util.List;
 @AllArgsConstructor
 @EqualsAndHashCode(onlyExplicitlyIncluded = true)
 public class Syllabus {
-    public static enum CurrentUnderstanding{
+    public static enum CurrentUnderstanding {
         BEGINNER, INTERMEDIATE, EXPERT
     }
-    public static enum Depth{
+
+    public static enum Depth {
         LEVEL1, LEVEL2, LEVEL3, LEVEL4, LEVEL5
     }
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @EqualsAndHashCode.Include
@@ -30,8 +32,12 @@ public class Syllabus {
 
     private String topic;
 
-    private CurrentUnderstanding currentUnderstanding ;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "current_understanding")
+    private CurrentUnderstanding currentUnderstanding;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "depth_level")
     private Depth depthLevel;
 
     private String goal;
@@ -48,6 +54,3 @@ public class Syllabus {
     @OrderBy("id ASC")
     private List<SyllabusModule> modules;
 }
-
-
-
