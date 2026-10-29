@@ -390,6 +390,87 @@ public class QuizService {
         }
     }
 
+    @Transactional(readOnly = true)
+    public QuizResultResponse getQuizResult(Long quizId) {
+        User currentUser = userContext.getCurrentUser();
+
+        Quiz quiz = quizRepository.findById(quizId)
+                .orElseThrow(() -> new ResourceNotFoundException("Quiz not found"));
+
+        verifyQuizOwnership(quiz, currentUser);
+
+        QuizAttempt attempt = attemptRepository
+                .findFirstByQuizIdAndUserIdOrderByAttemptedAtDesc(
+                        quizId, currentUser.getId())
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "No quiz attempt found for this user"));
+
+        List<QuizQuestion> questions = quiz.getQuestions();
+
+        if (questions == null || questions.isEmpty()
+                || questions.stream().anyMatch(q -> q == null)) {
+            throw new IllegalStateException(
+                    "Quiz questions are unavailable for result review.");
+        }
+
+        List<Integer> userAnswers;
+        try {
+            userAnswers = objectMapper.readValue(
+                    attempt.getUserAnswersJson(),
+                    new TypeReference<List<Integer>>() {
+                    });
+        } catch (Exception e) {
+            throw new IllegalStateException(
+                    "Unable to read the saved quiz answers.", e);
+        }
+
+        if (userAnswers == null
+                || userAnswers.size() != questions.size()
+                || attempt.getTotalQuestions() != questions.size()) {
+            throw new IllegalStateException(
+                    "Saved quiz answers do not match the quiz questions.");
+        }
+
+        List<Integer> correctIndices = new ArrayList<>();
+        List<QuizResultResponse.QuestionReview> review = new ArrayList<>();
+
+        for (int i = 0; i < questions.size(); i++) {
+            QuizQuestion question = questions.get(i);
+            Integer selectedAnswer = userAnswers.get(i);
+            int correctAnswer = question.getCorrectOptionIndex();
+
+            if (selectedAnswer == null
+                    || selectedAnswer < 0
+                    || selectedAnswer > 3
+                    || correctAnswer < 0
+                    || correctAnswer > 3) {
+                throw new IllegalStateException(
+                        "Saved quiz data contains an invalid answer.");
+            }
+
+            correctIndices.add(correctAnswer);
+
+            review.add(new QuizResultResponse.QuestionReview(
+                    question.getId(),
+                    question.getQuestionText(),
+                    List.of(
+                            question.getOptionA(),
+                            question.getOptionB(),
+                            question.getOptionC(),
+                            question.getOptionD()),
+                    selectedAnswer,
+                    correctAnswer,
+                    selectedAnswer == correctAnswer));
+        }
+
+        return new QuizResultResponse(
+                attempt.getScore(),
+                attempt.getTotalQuestions(),
+                attempt.isPassed(),
+                correctIndices,
+                review);
+    }
+
     private void verifyQuizOwnership(Quiz quiz, User currentUser) {
         Long ownerId = quiz.getModule()
                 .getSyllabus()
