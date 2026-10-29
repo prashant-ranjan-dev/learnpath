@@ -37,6 +37,13 @@ public class QuizController {
         return ResponseEntity.ok(result);
     }
 
+    @GetMapping("/{quizId}/result")
+    public ResponseEntity<QuizResultResponse> getQuizResult(
+            @PathVariable Long quizId) {
+        return ResponseEntity.ok(
+                quizService.getQuizResult(quizId));
+    }
+
     @PostMapping("/{quizId}/analyze")
     public ResponseEntity<WeaknessAnalysisResponse> analyzeWeaknesses(@PathVariable Long quizId) {
         WeaknessAnalysisResponse response = quizService.analyzeWeaknesses(quizId);
