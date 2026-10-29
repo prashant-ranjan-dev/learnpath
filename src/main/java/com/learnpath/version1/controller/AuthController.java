@@ -4,6 +4,7 @@ package com.learnpath.version1.controller;
 import com.learnpath.version1.entities.User;
 import com.learnpath.version1.repositories.UserRepository;
 import com.learnpath.version1.security.JwtUtil;
+import org.springframework.security.authentication.BadCredentialsException;
 import com.learnpath.version1.service.AuthService;
 import com.learnpath.version1.service.AuthService.EmailAlreadyRegisteredException;
 
@@ -13,6 +14,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -27,94 +29,84 @@ import java.util.Map;
 @Validated
 public class AuthController {
 
-    private final UserRepository userRepository;
-    private final JwtUtil jwtUtil;
-    private final AuthenticationManager authenticationManager;
-    private final AuthService authService;
+        private final UserRepository userRepository;
+        private final JwtUtil jwtUtil;
+        private final AuthenticationManager authenticationManager;
+        private final AuthService authService;
 
-    public AuthController(
-            UserRepository userRepository,
-            JwtUtil jwtUtil,
-            AuthenticationManager authenticationManager,
-            AuthService authService) {
+        public AuthController(
+                        UserRepository userRepository,
+                        JwtUtil jwtUtil,
+                        AuthenticationManager authenticationManager,
+                        AuthService authService) {
 
-        this.userRepository = userRepository;
-        this.jwtUtil = jwtUtil;
-        this.authenticationManager = authenticationManager;
-        this.authService = authService;
-    }
-
-    @PostMapping("/signup")
-    public ResponseEntity<Map<String, String>> signup(
-            @Valid @RequestBody SignupRequest request) {
-
-        try {
-            User user = authService.registerUser(
-                    request.email(),
-                    request.password(),
-                    request.name()
-            );
-
-            UserDetails userDetails =
-                    org.springframework.security.core.userdetails.User.builder()
-                            .username(user.getEmail())
-                            .password(user.getPassword())
-                            .roles("USER")
-                            .build();
-
-            String token = jwtUtil.generateToken(userDetails);
-
-            return ResponseEntity.ok(Map.of("token", token));
-
-        } catch (EmailAlreadyRegisteredException exception) {
-            return ResponseEntity.badRequest()
-                    .body(Map.of("error", exception.getMessage()));
+                this.userRepository = userRepository;
+                this.jwtUtil = jwtUtil;
+                this.authenticationManager = authenticationManager;
+                this.authService = authService;
         }
-    }
 
-    @PostMapping("/login")
-    public ResponseEntity<Map<String, String>> login(
-            @Valid @RequestBody LoginRequest request) {
+        @PostMapping("/signup")
+        public ResponseEntity<Map<String, String>> signup(
+                        @Valid @RequestBody SignupRequest request) {
 
-        Authentication authentication =
-                authenticationManager.authenticate(
-                        new UsernamePasswordAuthenticationToken(
-                                request.email(),
-                                request.password()
-                        )
-                );
+                try {
+                        User user = authService.registerUser(
+                                        request.email(),
+                                        request.password(),
+                                        request.name());
 
-        UserDetails userDetails =
-                (UserDetails) authentication.getPrincipal();
+                        UserDetails userDetails = org.springframework.security.core.userdetails.User.builder()
+                                        .username(user.getEmail())
+                                        .password(user.getPassword())
+                                        .roles("USER")
+                                        .build();
 
-        String token = jwtUtil.generateToken(userDetails);
+                        String token = jwtUtil.generateToken(userDetails);
 
-        return ResponseEntity.ok(Map.of("token", token));
-    }
+                        return ResponseEntity.ok(Map.of("token", token));
 
-    public record SignupRequest(
-            @NotBlank(message = "Email is required")
-            @Email(message = "Email must be valid")
-            @Size(max = 254, message = "Email must not exceed 254 characters")
-            String email,
+                } catch (EmailAlreadyRegisteredException exception) {
+                        return ResponseEntity.badRequest()
+                                        .body(Map.of("error", exception.getMessage()));
+                }
+        }
 
-            @NotBlank(message = "Password is required")
-            @Size(min = 8, max = 72,
-                    message = "Password must be between 8 and 72 characters")
-            String password,
+        @PostMapping("/login")
+        public ResponseEntity<Map<String, String>> login(
+                @Valid @RequestBody LoginRequest request) {
 
-            @NotBlank(message = "Name is required")
-            @Size(max = 100, message = "Name must not exceed 100 characters")
-            String name
-    ) {}
+                try {
+                        Authentication authentication = authenticationManager.authenticate(
+                                        new UsernamePasswordAuthenticationToken(
+                                                        request.email(),
+                                                        request.password()));
 
-    public record LoginRequest(
-            @NotBlank(message = "Email is required")
-            @Email(message = "Email must be valid")
-            @Size(max = 254, message = "Email must not exceed 254 characters")
-            String email,
+                        UserDetails userDetails = (UserDetails) authentication.getPrincipal();
 
-            @NotBlank(message = "Password is required")
-            String password
-    ) {}
+                        String token = jwtUtil.generateToken(userDetails);
+
+                        return ResponseEntity.ok(Map.of("token", token));
+
+                } catch (BadCredentialsException exception) {
+                        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                                        .body(Map.of(
+                                                        "error", "Unauthorized",
+                                                        "message", "Invalid email or password"));
+                }
+        }
+
+        public record SignupRequest(
+                        @NotBlank(message = "Email is required") @Email(message = "Email must be valid") @Size(max = 254, message = "Email must not exceed 254 characters") String email,
+
+                        @NotBlank(message = "Password is required") @Size(min = 8, max = 72, message = "Password must be between 8 and 72 characters") String password,
+
+                        @NotBlank(message = "Name is required") @Size(max = 100, message = "Name must not exceed 100 characters") String name) {
+        }
+
+        public record LoginRequest(
+                        @NotBlank(message = "Email is required") @Email(message = "Email must be valid") @Size(max = 254, message = "Email must not exceed 254 characters") String email,
+
+                        @NotBlank(message = "Password is required") String password) {
+        }
 }
