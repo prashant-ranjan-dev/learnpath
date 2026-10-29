@@ -1,4 +1,3 @@
-
 package com.learnpath.version1.dto;
 
 import java.util.List;
@@ -8,7 +7,10 @@ public record QuizResultResponse(
         int totalQuestions,
         boolean passed,
         List<Integer> correctAnswers,
-        List<QuestionReview> review) {
+        List<QuestionReview> review,
+        int passMarkPercent,
+        Long timeTakenSeconds
+) {
 
     public record QuestionReview(
             Long questionId,
@@ -16,6 +18,7 @@ public record QuizResultResponse(
             List<String> options,
             int selectedAnswerIndex,
             int correctAnswerIndex,
-            boolean correct) {
-    }
+            boolean correct,
+            String explanation
+    ) {}
 }
