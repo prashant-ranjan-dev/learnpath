@@ -78,6 +78,50 @@ public class SyllabusService {
         };
     }
 
+    private void validateAiSyllabus(AiSyllabusResponse response) {
+        if (response == null
+                || response.modules() == null
+                || response.modules().size() < 4
+                || response.modules().size() > 6) {
+            throw new AiResponseParsingException(
+                    "AI syllabus must contain between 4 and 6 modules.",
+                    null);
+        }
+
+        for (AiModule module : response.modules()) {
+            if (module == null
+                    || module.title() == null
+                    || module.title().isBlank()) {
+                throw new AiResponseParsingException(
+                        "Each AI-generated module must have a title.",
+                        null);
+            }
+
+            if (!Double.isFinite(module.estimatedHours())
+                    || module.estimatedHours() <= 0) {
+                throw new AiResponseParsingException(
+                        "Each module must have a positive, finite estimated duration.",
+                        null);
+            }
+
+            if (module.topics() == null
+                    || module.topics().size() < 3
+                    || module.topics().size() > 5) {
+                throw new AiResponseParsingException(
+                        "Each module must contain between 3 and 5 topics.",
+                        null);
+            }
+
+            for (String topic : module.topics()) {
+                if (topic == null || topic.isBlank()) {
+                    throw new AiResponseParsingException(
+                            "AI-generated topic names must not be blank.",
+                            null);
+                }
+            }
+        }
+    }
+
     @Transactional
     public SyllabusResponse generateSyllabus(SyllabusRequest request) {
         // Build the prompt
@@ -102,6 +146,8 @@ public class SyllabusService {
                     "Failed to parse AI syllabus JSON. Raw output: " + aiOutput, e);
 
         }
+
+        validateAiSyllabus(aiResponse);
 
         Syllabus syllabus = Syllabus.builder()
                 .topic(request.topic())
