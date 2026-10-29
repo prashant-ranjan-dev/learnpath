@@ -153,7 +153,6 @@ public class QuizService {
                     "AI returned an empty quiz response.");
         }
 
-        System.out.println("AI quiz response received for module ID: " + moduleId);
         List<AiQuestion> aiQuestions;
         try {
             String json = extractJson(aiOutput);
