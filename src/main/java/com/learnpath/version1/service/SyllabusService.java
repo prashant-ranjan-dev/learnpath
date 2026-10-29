@@ -4,6 +4,8 @@ import com.learnpath.version1.dto.ModuleDto;
 import com.learnpath.version1.dto.SyllabusRequest;
 import com.learnpath.version1.dto.SyllabusResponse;
 import com.learnpath.version1.dto.TopicDto;
+import com.learnpath.version1.dto.DashboardResponse;
+import com.learnpath.version1.entities.QuizAttempt;
 import com.learnpath.version1.entities.Syllabus;
 import com.learnpath.version1.entities.SyllabusModule;
 import com.learnpath.version1.entities.Topic;
@@ -208,6 +210,77 @@ public class SyllabusService {
                             }
                 """.formatted(request.topic(), request.currentUnderstanding(), request.depthLevel(), request.goal());
 
+    }
+
+    @Transactional(readOnly = true)
+    public DashboardResponse getDashboardSummary(User user) {
+        List<Syllabus> syllabi = syllabusRepository.findByUserOrderByCreatedAtDesc(user);
+
+        int totalModules = 0;
+        int completedModules = 0;
+        int totalTopics = 0;
+        int completedTopics = 0;
+
+        List<DashboardResponse.LearningPathSummary> recentPaths = new ArrayList<>();
+
+        for (Syllabus syllabus : syllabi) {
+            SyllabusResponse response = toResponseWithIds(syllabus);
+
+            int pathTotalModules = response.modules().size();
+
+            int pathCompletedModules = (int) response.modules().stream()
+                    .filter(ModuleDto::completed)
+                    .count();
+
+            int pathTotalTopics = response.modules().stream()
+                    .mapToInt(module -> module.topics().size())
+                    .sum();
+
+            int pathCompletedTopics = (int) response.modules().stream()
+                    .flatMap(module -> module.topics().stream())
+                    .filter(TopicDto::completed)
+                    .count();
+
+            double pathProgress = pathTotalTopics == 0
+                    ? 0.0
+                    : pathCompletedTopics * 100.0 / pathTotalTopics;
+
+            totalModules += pathTotalModules;
+            completedModules += pathCompletedModules;
+            totalTopics += pathTotalTopics;
+            completedTopics += pathCompletedTopics;
+
+            recentPaths.add(new DashboardResponse.LearningPathSummary(
+                    syllabus.getId(),
+                    syllabus.getTopic(),
+                    pathTotalModules,
+                    pathCompletedModules,
+                    pathTotalTopics,
+                    pathCompletedTopics,
+                    Math.round(pathProgress * 100.0) / 100.0));
+        }
+
+        List<QuizAttempt> attempts = quizAttemptRepository.findByUserIdOrderByAttemptedAtDesc(
+                user.getId());
+
+        int passedAttempts = (int) attempts.stream()
+                .filter(QuizAttempt::isPassed)
+                .count();
+
+        double overallProgress = totalTopics == 0
+                ? 0.0
+                : completedTopics * 100.0 / totalTopics;
+
+        return new DashboardResponse(
+                syllabi.size(),
+                totalModules,
+                completedModules,
+                totalTopics,
+                completedTopics,
+                Math.round(overallProgress * 100.0) / 100.0,
+                attempts.size(),
+                passedAttempts,
+                recentPaths.stream().limit(5).toList());
     }
 
     private String extractJson(String raw) {
