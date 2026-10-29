@@ -68,6 +68,8 @@ public class QuizService {
                     "You do not have permission to access this module");
         }
 
+        verifyModuleUnlocked(module, currentUser.getId());
+
         // A quiz is available only after every topic is completed.
         List<Topic> topics = module.getTopics();
 
@@ -219,6 +221,7 @@ public class QuizService {
                 .orElseThrow(() -> new ResourceNotFoundException("Quiz not Found"));
 
         verifyQuizOwnership(quiz, currentUser);
+        verifyModuleUnlocked(quiz.getModule(), currentUser.getId());
 
         SyllabusModule module = quiz.getModule();
         List<Topic> moduleTopics = module.getTopics();
@@ -282,6 +285,42 @@ public class QuizService {
         attemptRepository.save(attempt);
 
         return new QuizResultResponse(score, questions.size(), passed, correctIndices);
+    }
+
+    private void verifyModuleUnlocked(SyllabusModule module, Long userId) {
+        List<SyllabusModule> modules = module.getSyllabus().getModules();
+        int currentIndex = -1;
+
+        for (int i = 0; i < modules.size(); i++) {
+            if (modules.get(i).getId().equals(module.getId())) {
+                currentIndex = i;
+                break;
+            }
+        }
+
+        if (currentIndex == -1) {
+            throw new IllegalStateException(
+                    "Module does not belong to the syllabus.");
+        }
+
+        // The first module is always unlocked.
+        if (currentIndex == 0) {
+            return;
+        }
+
+        SyllabusModule previousModule = modules.get(currentIndex - 1);
+
+        boolean previousModulePassed = quizRepository
+                .findByModuleId(previousModule.getId())
+                .map(Quiz::getId)
+                .map(quizId -> attemptRepository
+                        .existsByQuizIdAndUserIdAndPassedTrue(quizId, userId))
+                .orElse(false);
+
+        if (!previousModulePassed) {
+            throw new IllegalStateException(
+                    "Complete the previous module and pass its quiz to unlock this module.");
+        }
     }
 
     private void verifyQuizOwnership(Quiz quiz, User currentUser) {
