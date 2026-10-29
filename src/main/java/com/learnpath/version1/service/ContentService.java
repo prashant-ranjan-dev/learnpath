@@ -4,21 +4,67 @@ import com.learnpath.version1.dto.ContentResponse;
 import com.learnpath.version1.entities.Syllabus;
 import com.learnpath.version1.entities.SyllabusModule;
 import com.learnpath.version1.entities.Topic;
+import com.learnpath.version1.entities.Quiz;
 import com.learnpath.version1.exception.ResourceNotFoundException;
+import com.learnpath.version1.repositories.QuizRepository;
+import com.learnpath.version1.repositories.QuizAttemptRepository;
 import com.learnpath.version1.repositories.TopicRepository;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import java.util.List;
+
 
 @Service
 public class ContentService {
     private final TopicRepository topicRepository;
     private final ChatClient chatClient;
+    private final QuizRepository quizRepository;
+    private final QuizAttemptRepository quizAttemptRepository;
 
-    public ContentService(TopicRepository topicRepository, ChatClient.Builder chatBuilderBuilder) {
+    public ContentService(TopicRepository topicRepository, ChatClient.Builder chatBuilderBuilder, QuizRepository quizRepository, QuizAttemptRepository quizAttemptRepository) {
         this.topicRepository = topicRepository;
         this.chatClient = chatBuilderBuilder.build();
+        this.quizRepository = quizRepository;
+this.quizAttemptRepository = quizAttemptRepository;
     }
+
+    private void verifyModuleUnlocked(SyllabusModule module, Long userId) {
+    List<SyllabusModule> modules = module.getSyllabus().getModules();
+
+    int currentIndex = -1;
+
+    for (int i = 0; i < modules.size(); i++) {
+        if (modules.get(i).getId().equals(module.getId())) {
+            currentIndex = i;
+            break;
+        }
+    }
+
+    if (currentIndex == -1) {
+        throw new IllegalStateException(
+                "Module does not belong to the syllabus.");
+    }
+
+    // The first module is always unlocked.
+    if (currentIndex == 0) {
+        return;
+    }
+
+    SyllabusModule previousModule = modules.get(currentIndex - 1);
+
+    boolean previousModulePassed = quizRepository
+            .findByModuleId(previousModule.getId())
+            .map(Quiz::getId)
+            .map(quizId -> quizAttemptRepository
+                    .existsByQuizIdAndUserIdAndPassedTrue(quizId, userId))
+            .orElse(false);
+
+    if (!previousModulePassed) {
+        throw new IllegalStateException(
+                "Complete the previous module and pass its quiz to unlock this module.");
+    }
+}
 
     @Transactional
     public ContentResponse getOrGenerateContent(Long topicId) {
@@ -54,6 +100,8 @@ public class ContentService {
             throw new org.springframework.security.access.AccessDeniedException(
                     "You are not authorized to access this topic");
         }
+        
+        verifyModuleUnlocked(module, userId);
 
         return getOrGenerateContent(topicId);
     }
@@ -77,6 +125,8 @@ public class ContentService {
             throw new IllegalStateException(
                     "View the topic content before marking it as completed.");
         }
+
+        verifyModuleUnlocked(module, userId);
 
         if (!topic.isCompleted()) {
             topic.setCompleted(true);
