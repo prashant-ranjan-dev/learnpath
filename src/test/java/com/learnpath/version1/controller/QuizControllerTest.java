@@ -6,6 +6,7 @@ import com.learnpath.version1.security.JwtUtil;
 import com.learnpath.version1.service.QuizService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import com.learnpath.version1.dto.QuizAttemptStartResponse;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -19,6 +20,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 @WebMvcTest(QuizController.class)
 @AutoConfigureMockMvc(addFilters = false)
@@ -51,8 +53,7 @@ class QuizControllerTest {
                         submittedAt,
                         startedAt,
                         submittedAt,
-                        120L
-                ),
+                        120L),
                 new QuizAttemptHistoryResponse(
                         501L,
                         40L,
@@ -62,9 +63,7 @@ class QuizControllerTest {
                         submittedAt.minusDays(1),
                         startedAt.minusDays(1),
                         submittedAt.minusDays(1),
-                        90L
-                )
-        );
+                        90L));
 
         when(quizService.getQuizAttemptHistory(40L)).thenReturn(history);
 
@@ -96,5 +95,25 @@ class QuizControllerTest {
                 .andExpect(jsonPath("$.length()").value(0));
 
         verify(quizService).getQuizAttemptHistory(40L);
+    }
+
+    @Test
+    void startAttemptReturnsAttemptDetailsAsJson() throws Exception {
+        LocalDateTime startedAt = LocalDateTime.of(2026, 10, 31, 18, 0);
+
+        QuizAttemptStartResponse response = new QuizAttemptStartResponse(
+                700L,
+                40L,
+                startedAt);
+
+        when(quizService.startAttempt(40L)).thenReturn(response);
+
+        mockMvc.perform(post("/api/quizzes/40/attempts/start"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.attemptId").value(700))
+                .andExpect(jsonPath("$.quizId").value(40))
+                .andExpect(jsonPath("$.startedAt").value("2026-10-31T18:00:00"));
+
+        verify(quizService).startAttempt(40L);
     }
 }
