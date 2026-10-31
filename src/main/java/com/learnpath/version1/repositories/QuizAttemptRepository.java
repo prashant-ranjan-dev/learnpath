@@ -8,25 +8,24 @@ import java.util.Optional;
 
 public interface QuizAttemptRepository extends JpaRepository<QuizAttempt, Long> {
 
-    List<QuizAttempt> findByUserIdOrderByAttemptedAtDesc(Long userId);
+        List<QuizAttempt> findByUserIdOrderByAttemptedAtDesc(Long userId);
 
-    Optional<QuizAttempt> findFirstByQuizIdAndUserIdOrderByAttemptedAtDesc(
-            Long quizId,
-            Long userId
-    );
+        Optional<QuizAttempt> findFirstByQuizIdAndUserIdOrderByAttemptedAtDesc(
+                        Long quizId,
+                        Long userId);
 
-    Optional<QuizAttempt> findFirstByQuizIdAndUserIdAndUserAnswersJsonIsNullOrderByStartedAtDesc(
-            Long quizId,
-            Long userId
-    );
+        List<QuizAttempt> findByUserIdAndUserAnswersJsonIsNotNullOrderByAttemptedAtDesc(
+                        Long userId);
 
-    Optional<QuizAttempt> findFirstByQuizIdAndUserIdAndUserAnswersJsonIsNotNullOrderByAttemptedAtDesc(
-            Long quizId,
-            Long userId
-    );
+        Optional<QuizAttempt> findFirstByQuizIdAndUserIdAndUserAnswersJsonIsNullOrderByStartedAtDesc(
+                        Long quizId,
+                        Long userId);
 
-    boolean existsByQuizIdAndUserIdAndPassedTrue(
-            Long quizId,
-            Long userId
-    );
+        Optional<QuizAttempt> findFirstByQuizIdAndUserIdAndUserAnswersJsonIsNotNullOrderByAttemptedAtDesc(
+                        Long quizId,
+                        Long userId);
+
+        boolean existsByQuizIdAndUserIdAndPassedTrue(
+                        Long quizId,
+                        Long userId);
 }

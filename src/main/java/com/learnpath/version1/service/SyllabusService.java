@@ -294,7 +294,8 @@ public class SyllabusService {
                                         Math.round(pathProgress * 100.0) / 100.0));
                 }
 
-                List<QuizAttempt> attempts = quizAttemptRepository.findByUserIdOrderByAttemptedAtDesc(
+                List<QuizAttempt> attempts = quizAttemptRepository
+                .findByUserIdAndUserAnswersJsonIsNotNullOrderByAttemptedAtDesc(
                                 user.getId());
 
                 int passedAttempts = (int) attempts.stream()
