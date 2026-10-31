@@ -7,6 +7,8 @@ import com.learnpath.version1.service.QuizService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import com.learnpath.version1.dto.QuizAttemptStartResponse;
+import com.learnpath.version1.dto.QuestionDto;
+import com.learnpath.version1.dto.QuizResponse;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -116,4 +118,50 @@ class QuizControllerTest {
 
         verify(quizService).startAttempt(40L);
     }
+
+    @Test
+    void getQuizReturnsQuizDetailsAndQuestionsAsJson() throws Exception {
+        QuizResponse response = new QuizResponse(
+                40L,
+                "Java Collections",
+                "Test your knowledge of Java Collections",
+                70,
+                List.of(
+                        new QuestionDto(
+                                101L,
+                                "Which interface represents a collection of unique elements?",
+                                "List",
+                                "Set",
+                                "Queue",
+                                "Map"),
+                        new QuestionDto(
+                                102L,
+                                "Which collection follows FIFO ordering?",
+                                "Stack",
+                                "HashSet",
+                                "Queue",
+                                "TreeMap")));
+
+        when(quizService.getQuiz(40L)).thenReturn(response);
+
+        mockMvc.perform(get("/api/quizzes/40"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.quizId").value(40))
+                .andExpect(jsonPath("$.title").value("Java Collections"))
+                .andExpect(jsonPath("$.description")
+                        .value("Test your knowledge of Java Collections"))
+                .andExpect(jsonPath("$.passMarkPercent").value(70))
+                .andExpect(jsonPath("$.questions.length()").value(2))
+                .andExpect(jsonPath("$.questions[0].id").value(101))
+                .andExpect(jsonPath("$.questions[0].questionText")
+                        .value("Which interface represents a collection of unique elements?"))
+                .andExpect(jsonPath("$.questions[0].optionA").value("List"))
+                .andExpect(jsonPath("$.questions[0].optionB").value("Set"))
+                .andExpect(jsonPath("$.questions[0].optionC").value("Queue"))
+                .andExpect(jsonPath("$.questions[0].optionD").value("Map"))
+                .andExpect(jsonPath("$.questions[1].id").value(102));
+
+        verify(quizService).getQuiz(40L);
+    }
+
 }
