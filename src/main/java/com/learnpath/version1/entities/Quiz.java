@@ -32,6 +32,10 @@ public class Quiz {
     @Column(columnDefinition = "TEXT")
     private String description;
 
+    @Builder.Default
+    @Column(nullable = false)
+    private Integer durationMinutes = 15;
+
     /**
      * Nullable to allow legacy database records to be handled safely.
      * Service logic must use 70 when this field is null.
