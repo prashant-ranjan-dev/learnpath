@@ -3,6 +3,7 @@ package com.learnpath.version1.entities;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -41,6 +42,12 @@ public class Syllabus {
     private Depth depthLevel;
 
     private String goal;
+
+    @Column(columnDefinition = "TEXT")
+    private String description;
+
+    @UpdateTimestamp
+    private LocalDateTime updatedAt;
 
     @CreationTimestamp
     @Column(updatable = false)
