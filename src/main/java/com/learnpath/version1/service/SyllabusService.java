@@ -172,6 +172,8 @@ public class SyllabusService {
                                 .currentUnderstanding(mapCurrentUnderstanding(request.currentUnderstanding()))
                                 .depthLevel(mapDepthLevel(request.depthLevel()))
                                 .goal(request.goal())
+                                .description("A learning path for " + request.topic()
+                                                + ", designed to help you " + request.goal() + ".")
                                 .user(userContext.getCurrentUser())
                                 .modules(new ArrayList<>())
                                 .build();
@@ -183,14 +185,24 @@ public class SyllabusService {
                                         .title(aiMod.title())
                                         .estimatedHours((float) aiMod.estimatedHours())
                                         .syllabus(syllabus)
+                                        .description(aiMod.title())
                                         .topics(new ArrayList<>())
                                         .build();
+
+                        int topicCount = aiMod.topics().size();
+                        int estimatedMinutes = Math.max(
+                                        1,
+                                        (int) Math.ceil(aiMod.estimatedHours() * 60.0 / topicCount));
 
                         for (String topicName : aiMod.topics()) {
                                 Topic topic = Topic.builder()
                                                 .name(topicName)
+                                                .description(topicName)
+                                                .estimatedMinutes(estimatedMinutes)
+                                                .completed(false)
                                                 .syllabusModule(mod)
                                                 .build();
+
                                 mod.getTopics().add(topic);
                         }
                         moduleEntities.add(mod);
@@ -295,8 +307,8 @@ public class SyllabusService {
                 }
 
                 List<QuizAttempt> attempts = quizAttemptRepository
-                .findByUserIdAndUserAnswersJsonIsNotNullOrderByAttemptedAtDesc(
-                                user.getId());
+                                .findByUserIdAndUserAnswersJsonIsNotNullOrderByAttemptedAtDesc(
+                                                user.getId());
 
                 int passedAttempts = (int) attempts.stream()
                                 .filter(QuizAttempt::isPassed)
@@ -337,7 +349,10 @@ public class SyllabusService {
 
         @Transactional(readOnly = true)
         public SyllabusResponse toResponseWithIds(Syllabus syllabus) {
-                List<SyllabusModule> modules = syllabus.getModules();
+                List<SyllabusModule> modules = syllabus.getModules() == null
+                                ? List.of()
+                                : syllabus.getModules();
+
                 List<ModuleDto> moduleDtos = new ArrayList<>();
 
                 Long userId = syllabus.getUser() != null
@@ -345,42 +360,102 @@ public class SyllabusService {
                                 : null;
 
                 boolean previousModuleCompleted = true;
+                SyllabusResponse.NextTopic nextTopic = null;
+
+                int totalTopics = 0;
+                int completedTopics = 0;
 
                 for (SyllabusModule module : modules) {
-                        boolean completed = false;
+                        List<Topic> topics = module.getTopics() == null
+                                        ? List.of()
+                                        : module.getTopics();
+
+                        boolean moduleCompleted = false;
 
                         if (userId != null && module.getId() != null) {
-                                completed = quizRepository.findByModuleId(module.getId())
+                                moduleCompleted = quizRepository.findByModuleId(module.getId())
                                                 .map(Quiz::getId)
                                                 .map(quizId -> quizAttemptRepository
-                                                                .existsByQuizIdAndUserIdAndPassedTrue(
-                                                                                quizId, userId))
+                                                                .existsByQuizIdAndUserIdAndPassedTrue(quizId, userId))
                                                 .orElse(false);
                         }
 
                         boolean unlocked = previousModuleCompleted;
 
-                        List<TopicDto> topicDtos = module.getTopics().stream()
+                        List<TopicDto> topicDtos = topics.stream()
                                         .map(topic -> new TopicDto(
                                                         topic.getId(),
                                                         topic.getName(),
+                                                        isBlank(topic.getDescription())
+                                                                        ? topic.getName()
+                                                                        : topic.getDescription(),
+                                                        topic.getEstimatedMinutes() == null
+                                                                        || topic.getEstimatedMinutes() <= 0
+                                                                                        ? 20
+                                                                                        : topic.getEstimatedMinutes(),
                                                         topic.isCompleted()))
                                         .toList();
+
+                        int moduleCompletedTopics = (int) topicDtos.stream()
+                                        .filter(TopicDto::completed)
+                                        .count();
+
+                        totalTopics += topicDtos.size();
+                        completedTopics += moduleCompletedTopics;
+
+                        if (nextTopic == null && unlocked) {
+                                for (Topic topic : topics) {
+                                        if (!topic.isCompleted()) {
+                                                nextTopic = new SyllabusResponse.NextTopic(
+                                                                topic.getId(),
+                                                                topic.getName(),
+                                                                module.getId(),
+                                                                module.getTitle());
+                                                break;
+                                        }
+                                }
+                        }
 
                         moduleDtos.add(new ModuleDto(
                                         module.getId(),
                                         module.getTitle(),
+                                        isBlank(module.getDescription())
+                                                        ? module.getTitle()
+                                                        : module.getDescription(),
                                         module.getEstimatedHours(),
-                                        completed,
+                                        moduleCompleted,
                                         unlocked,
+                                        moduleCompletedTopics,
                                         topicDtos));
 
-                        previousModuleCompleted = completed;
+                        previousModuleCompleted = moduleCompleted;
                 }
+
+                double totalHours = modules.stream()
+                                .mapToDouble(SyllabusModule::getEstimatedHours)
+                                .sum();
+
+                double progressPercent = totalTopics == 0
+                                ? 0.0
+                                : Math.round(completedTopics * 10000.0 / totalTopics) / 100.0;
 
                 return new SyllabusResponse(
                                 syllabus.getId(),
                                 syllabus.getTopic(),
+                                isBlank(syllabus.getDescription())
+                                                ? syllabus.getTopic()
+                                                : syllabus.getDescription(),
+                                syllabus.getCurrentUnderstanding() == null
+                                                ? null
+                                                : syllabus.getCurrentUnderstanding().name(),
+                                syllabus.getGoal(),
+                                Math.round(totalHours * 100.0) / 100.0,
+                                progressPercent,
+                                nextTopic,
                                 moduleDtos);
+        }
+
+        private boolean isBlank(String value) {
+                return value == null || value.isBlank();
         }
 }
