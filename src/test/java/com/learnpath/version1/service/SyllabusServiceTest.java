@@ -176,4 +176,97 @@ class SyllabusServiceTest {
         assertEquals(0, response.recentLearningPaths().size());
     }
 
+    @Test
+    void getDashboardSummaryReturnsOneHundredPercentWhenAllTopicsAreCompleted() {
+        User user = User.builder()
+                .id(3L)
+                .email("completed@example.com")
+                .password("test-password")
+                .name("Completed User")
+                .build();
+
+        Topic topicOne = Topic.builder()
+                .id(301L)
+                .name("Java Fundamentals")
+                .completed(true)
+                .build();
+
+        Topic topicTwo = Topic.builder()
+                .id(302L)
+                .name("Java Collections")
+                .completed(true)
+                .build();
+
+        SyllabusModule module = SyllabusModule.builder()
+                .id(30L)
+                .title("Java Basics")
+                .estimatedHours(5.0)
+                .topics(new ArrayList<>(List.of(topicOne, topicTwo)))
+                .build();
+
+        Syllabus syllabus = Syllabus.builder()
+                .id(300L)
+                .topic("Java")
+                .user(user)
+                .modules(new ArrayList<>(List.of(module)))
+                .build();
+
+        when(syllabusRepository.findByUserOrderByCreatedAtDesc(user))
+                .thenReturn(List.of(syllabus));
+
+        when(quizRepository.findByModuleId(30L))
+                .thenReturn(Optional.empty());
+
+        when(quizAttemptRepository
+                .findByUserIdAndUserAnswersJsonIsNotNullOrderByAttemptedAtDesc(3L))
+                .thenReturn(List.of());
+
+        DashboardResponse response = syllabusService.getDashboardSummary(user);
+
+        assertEquals(1, response.totalLearningPaths());
+        assertEquals(2, response.totalTopics());
+        assertEquals(2, response.completedTopics());
+        assertEquals(100.0, response.progressPercent());
+
+        assertEquals(1, response.recentLearningPaths().size());
+        assertEquals(
+                100.0,
+                response.recentLearningPaths().get(0).progressPercent());
+    }
+
+    @Test
+    void getDashboardSummaryReturnsAtMostFiveRecentLearningPaths() {
+        User user = User.builder()
+                .id(4L)
+                .email("paths@example.com")
+                .password("test-password")
+                .name("Paths User")
+                .build();
+
+        List<Syllabus> syllabi = new ArrayList<>();
+
+        for (long id = 6; id >= 1; id--) {
+            syllabi.add(Syllabus.builder()
+                    .id(id)
+                    .topic("Topic " + id)
+                    .user(user)
+                    .modules(new ArrayList<>())
+                    .build());
+        }
+
+        when(syllabusRepository.findByUserOrderByCreatedAtDesc(user))
+                .thenReturn(syllabi);
+        when(quizAttemptRepository
+                .findByUserIdAndUserAnswersJsonIsNotNullOrderByAttemptedAtDesc(4L))
+                .thenReturn(List.of());
+
+        DashboardResponse response = syllabusService.getDashboardSummary(user);
+
+        assertEquals(6, response.totalLearningPaths());
+        assertEquals(5, response.recentLearningPaths().size());
+        assertEquals(6L, response.recentLearningPaths().get(0).syllabusId());
+        assertEquals(5L, response.recentLearningPaths().get(1).syllabusId());
+        assertEquals(2L, response.recentLearningPaths().get(4).syllabusId());
+    }
+
 }
