@@ -7,5 +7,25 @@ public record QuizResponse(
         String title,
         String description,
         int passMarkPercent,
+        int durationMinutes,
+        int questionCount,
         List<QuestionDto> questions
-) {}
+) {
+    public QuizResponse(
+            Long quizId,
+            String title,
+            String description,
+            int passMarkPercent,
+            List<QuestionDto> questions
+    ) {
+        this(
+                quizId,
+                title,
+                description,
+                passMarkPercent,
+                15,
+                questions == null ? 0 : questions.size(),
+                questions
+        );
+    }
+}
