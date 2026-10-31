@@ -63,8 +63,7 @@ class SyllabusServiceTest {
                 objectMapper,
                 userContext,
                 quizRepository,
-                quizAttemptRepository
-        );
+                quizAttemptRepository);
     }
 
     @Test
@@ -94,8 +93,7 @@ class SyllabusServiceTest {
                 .estimatedHours(5.0)
                 .topics(new ArrayList<>(List.of(
                         completedTopic,
-                        incompleteTopic
-                )))
+                        incompleteTopic)))
                 .build();
 
         Syllabus syllabus = Syllabus.builder()
@@ -127,8 +125,7 @@ class SyllabusServiceTest {
                 .findByUserIdAndUserAnswersJsonIsNotNullOrderByAttemptedAtDesc(1L))
                 .thenReturn(List.of(passedAttempt, failedAttempt));
 
-        DashboardResponse response =
-                syllabusService.getDashboardSummary(user);
+        DashboardResponse response = syllabusService.getDashboardSummary(user);
 
         assertEquals(1, response.totalLearningPaths());
         assertEquals(1, response.totalModules());
@@ -144,10 +141,39 @@ class SyllabusServiceTest {
         assertEquals(1, response.recentLearningPaths().size());
         assertEquals(
                 50.0,
-                response.recentLearningPaths().get(0).progressPercent()
-        );
+                response.recentLearningPaths().get(0).progressPercent());
 
         verify(quizAttemptRepository)
                 .findByUserIdAndUserAnswersJsonIsNotNullOrderByAttemptedAtDesc(1L);
     }
+
+    @Test
+    void getDashboardSummaryReturnsZerosWhenUserHasNoLearningPathsOrAttempts() {
+        User user = User.builder()
+                .id(2L)
+                .email("empty@example.com")
+                .password("test-password")
+                .name("Empty User")
+                .build();
+
+        when(syllabusRepository.findByUserOrderByCreatedAtDesc(user))
+                .thenReturn(List.of());
+
+        when(quizAttemptRepository
+                .findByUserIdAndUserAnswersJsonIsNotNullOrderByAttemptedAtDesc(2L))
+                .thenReturn(List.of());
+
+        DashboardResponse response = syllabusService.getDashboardSummary(user);
+
+        assertEquals(0, response.totalLearningPaths());
+        assertEquals(0, response.totalModules());
+        assertEquals(0, response.completedModules());
+        assertEquals(0, response.totalTopics());
+        assertEquals(0, response.completedTopics());
+        assertEquals(0.0, response.progressPercent());
+        assertEquals(0, response.totalQuizAttempts());
+        assertEquals(0, response.passedQuizAttempts());
+        assertEquals(0, response.recentLearningPaths().size());
+    }
+
 }
