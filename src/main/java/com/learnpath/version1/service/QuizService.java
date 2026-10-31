@@ -148,6 +148,7 @@ public class QuizService {
                 .module(module)
                 .title("Module Quiz")
                 .description("Test your understanding of this module.")
+                .durationMinutes(15)
                 .passMarkPercent(DEFAULT_PASS_MARK_PERCENT)
                 .build();
 
@@ -622,11 +623,18 @@ public class QuizService {
                         question.getOptionD()))
                 .toList();
 
+        Integer configuredDuration = quiz.getDurationMinutes();
+        int durationMinutes = configuredDuration == null || configuredDuration <= 0
+                ? 15
+                : configuredDuration;
+
         return new QuizResponse(
                 quiz.getId(),
                 getQuizTitle(quiz),
                 getQuizDescription(quiz),
                 getPassMarkPercent(quiz),
+                durationMinutes,
+                questionDtos.size(),
                 questionDtos);
     }
 
