@@ -22,10 +22,13 @@ public class SyllabusModule {
 
     private String title;
 
+    @Column(columnDefinition = "TEXT")
+    private String description;
+
     private double estimatedHours;
 
     @ManyToOne
-    @JoinColumn(name ="syllabus_id")
+    @JoinColumn(name = "syllabus_id")
     private Syllabus syllabus;
 
     @OneToMany(mappedBy = "syllabusModule", cascade = CascadeType.ALL, orphanRemoval = true)
