@@ -135,7 +135,8 @@ public class QuizService {
         try {
             aiQuestions = objectMapper.readValue(
                     extractJson(aiOutput),
-                    new TypeReference<List<AiQuestion>>() {});
+                    new TypeReference<List<AiQuestion>>() {
+                    });
 
             validateGeneratedQuestions(aiQuestions);
         } catch (Exception e) {
@@ -191,10 +192,9 @@ public class QuizService {
 
         validateQuizQuestions(quiz, "started");
 
-        Optional<QuizAttempt> activeAttempt =
-                attemptRepository
-                        .findFirstByQuizIdAndUserIdAndUserAnswersJsonIsNullOrderByStartedAtDesc(
-                                quizId, currentUser.getId());
+        Optional<QuizAttempt> activeAttempt = attemptRepository
+                .findFirstByQuizIdAndUserIdAndUserAnswersJsonIsNullOrderByStartedAtDesc(
+                        quizId, currentUser.getId());
 
         if (activeAttempt.isPresent()) {
             QuizAttempt attempt = activeAttempt.get();
@@ -383,6 +383,30 @@ public class QuizService {
         return buildResultResponse(quiz, attempt);
     }
 
+    @Transactional(readOnly = true)
+    public List<QuizAttemptHistoryResponse> getQuizAttemptHistory(Long quizId) {
+        User currentUser = userContext.getCurrentUser();
+
+        // Reuse existing access checks; users can only access their own quiz.
+        getAccessibleQuiz(quizId);
+
+        return attemptRepository
+                .findByQuizIdAndUserIdAndUserAnswersJsonIsNotNullOrderByAttemptedAtDesc(
+                        quizId, currentUser.getId())
+                .stream()
+                .map(attempt -> new QuizAttemptHistoryResponse(
+                        attempt.getId(),
+                        quizId,
+                        attempt.getScore(),
+                        attempt.getTotalQuestions(),
+                        attempt.isPassed(),
+                        attempt.getAttemptedAt(),
+                        attempt.getStartedAt(),
+                        attempt.getSubmittedAt(),
+                        attempt.getTimeTakenSeconds()))
+                .toList();
+    }
+
     @Transactional
     public WeaknessAnalysisResponse analyzeWeaknesses(Long quizId) {
         User currentUser = userContext.getCurrentUser();
@@ -486,7 +510,8 @@ public class QuizService {
         try {
             List<WeakTopic> weakTopics = objectMapper.readValue(
                     extractJson(aiOutput),
-                    new TypeReference<List<WeakTopic>>() {});
+                    new TypeReference<List<WeakTopic>>() {
+                    });
 
             if (weakTopics == null) {
                 throw new IllegalArgumentException(
@@ -664,7 +689,8 @@ public class QuizService {
         try {
             answers = objectMapper.readValue(
                     attempt.getUserAnswersJson(),
-                    new TypeReference<List<Integer>>() {});
+                    new TypeReference<List<Integer>>() {
+                    });
         } catch (Exception e) {
             throw new IllegalStateException(
                     "Unable to read the saved quiz answers.", e);
@@ -740,9 +766,8 @@ public class QuizService {
         boolean previousModulePassed = quizRepository
                 .findByModuleId(previousModule.getId())
                 .map(Quiz::getId)
-                .map(previousQuizId ->
-                        attemptRepository.existsByQuizIdAndUserIdAndPassedTrue(
-                                previousQuizId, userId))
+                .map(previousQuizId -> attemptRepository.existsByQuizIdAndUserIdAndPassedTrue(
+                        previousQuizId, userId))
                 .orElse(false);
 
         if (!previousModulePassed) {
@@ -804,5 +829,6 @@ public class QuizService {
             String optionC,
             String optionD,
             Integer correctOptionIndex,
-            String explanation) {}
+            String explanation) {
+    }
 }
