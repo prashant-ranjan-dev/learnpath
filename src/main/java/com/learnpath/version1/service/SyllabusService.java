@@ -157,6 +157,13 @@ public class SyllabusService {
                                 .call()
                                 .content();
 
+                // Validate the AI response before attempting JSON extraction.
+                if (aiOutput == null || aiOutput.isBlank()) {
+                        throw new AiResponseParsingException(
+                                "AI returned an empty syllabus response. Please try again.",
+                                null);
+                }
+                                        
                 // Extract the Json from the AI Response
                 String json = extractJson(aiOutput);
                 AiSyllabusResponse aiResponse;
