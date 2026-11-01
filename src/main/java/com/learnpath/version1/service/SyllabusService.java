@@ -244,41 +244,42 @@ public class SyllabusService {
                                 Goal: %s
 
                                 Produce exactly 4-6 modules. Each module must have:
-                                                                        - "title": a descriptive module title
-                                                                        - "description": 1-2 sentences explaining what the learner will understand or be able to do after this module
-                                                                        - "topics": a list of 3-5 topic objects, each containing:
-                                                                          - "name": a specific topic name
-                                                                          - "description": 1 concise sentence explaining what the topic covers
-                                                                          - "estimatedMinutes": a positive integer estimating how long the topic takes to study
-                                                                        - "estimatedHours": a number (e.g. 3.5) representing estimated hours
+                                        - "title": a descriptive module title
+                                        - "description": 1-2 sentences explaining what the learner will understand or be able to do after this module
+                                        - "topics": a list of 3-5 topic objects, each containing:
+                                                - "name": a specific topic name
+                                                - "description": 1 concise sentence explaining what the topic covers
+                                                - "estimatedMinutes": a positive integer estimating how long the topic takes to study
+                                        - "estimatedHours": a number (e.g. 3.5) representing estimated hours
 
-                                                                        Return ONLY a valid JSON object with a single key "modules", like:
-                                                                        {
-                                                                          "modules": [
-                                                                            {
-                                                                              "title": "Java Fundamentals",
-                                                                              "description": "Learn Java syntax and core programming constructs to build a foundation for object-oriented programming.",
-                                                                              "topics": [
-                                                                                {
-                                          "name": "Variables and Data Types",
-                                          "description": "Understand primitive types, reference types, declarations, and type conversion.",
-                                          "estimatedMinutes": 30
-                                        },
-                                                                                {
-                                          "name": "Variables and Data Types",
-                                          "description": "Understand primitive types, reference types, declarations, and type conversion.",
-                                          "estimatedMinutes": 30
-                                        },
-                                                                                {
-                                          "name": "Variables and Data Types",
-                                          "description": "Understand primitive types, reference types, declarations, and type conversion.",
-                                          "estimatedMinutes": 30
-                                        }
-                                                                              ],
-                                                                              "estimatedHours": 5.5
-                                                                            }
-                                                                          ]
-                                                                        }"""
+                                Return ONLY a valid JSON object with a single key "modules", like:
+                                        {
+                                                {
+                                                        "modules": [
+                                                        {
+                                                        "title": "Java Fundamentals",
+                                                        "description": "Learn Java syntax and core programming constructs to build a foundation for object-oriented programming.",
+                                                        "topics": [
+                                                                {
+                                                                "name": "Variables and Data Types",
+                                                                "description": "Understand primitive types, reference types, declarations, and type conversion.",
+                                                                "estimatedMinutes": 60
+                                                                },
+                                                                {
+                                                                "name": "Control Flow",
+                                                                "description": "Use conditional statements and loops to control program execution.",
+                                                                "estimatedMinutes": 90
+                                                                },
+                                                                {
+                                                                "name": "Methods",
+                                                                "description": "Organize reusable logic into methods with parameters and return values.",
+                                                                "estimatedMinutes": 180
+                                                                }
+                                                        ],
+                                                        "estimatedHours": 5.5
+                                                        }
+                                                        ]
+                                                        }"""
                                 .formatted(request.topic(), request.currentUnderstanding(), request.depthLevel(),
                                                 request.goal());
 
