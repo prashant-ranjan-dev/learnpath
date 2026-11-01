@@ -3,21 +3,27 @@ package com.learnpath.version1.service;
 
 import com.learnpath.version1.dto.QuizResultResponse;
 import com.learnpath.version1.dto.QuizSubmissionRequest;
+import com.learnpath.version1.dto.WeakTopic;
 import com.learnpath.version1.entities.*;
 import com.learnpath.version1.repositories.ModuleRepository;
 import com.learnpath.version1.repositories.QuizAttemptRepository;
 import com.learnpath.version1.repositories.QuizRepository;
+import com.learnpath.version1.repositories.WeaknessAnalysisRepository;
 import com.learnpath.version1.utility.UserContext;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.security.access.AccessDeniedException;
 import tools.jackson.databind.ObjectMapper;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -28,6 +34,7 @@ class QuizServiceTest {
         private ModuleRepository moduleRepository;
         private QuizRepository quizRepository;
         private QuizAttemptRepository attemptRepository;
+        private WeaknessAnalysisRepository weaknessAnalysisRepository;
         private ChatClient.Builder chatClientBuilder;
         private ChatClient chatClient;
         private UserContext userContext;
@@ -42,8 +49,9 @@ class QuizServiceTest {
                 moduleRepository = mock(ModuleRepository.class);
                 quizRepository = mock(QuizRepository.class);
                 attemptRepository = mock(QuizAttemptRepository.class);
+                weaknessAnalysisRepository = mock(WeaknessAnalysisRepository.class);
                 chatClientBuilder = mock(ChatClient.Builder.class);
-                chatClient = mock(ChatClient.class);
+                chatClient = mock(ChatClient.class, RETURNS_DEEP_STUBS);
                 userContext = mock(UserContext.class);
 
                 when(chatClientBuilder.build()).thenReturn(chatClient);
@@ -52,6 +60,7 @@ class QuizServiceTest {
                                 moduleRepository,
                                 quizRepository,
                                 attemptRepository,
+                                weaknessAnalysisRepository,
                                 chatClientBuilder,
                                 new ObjectMapper(),
                                 userContext);
@@ -439,12 +448,150 @@ class QuizServiceTest {
                                 .findFirstByQuizIdAndUserIdAndUserAnswersJsonIsNotNullOrderByAttemptedAtDesc(
                                                 40L, 10L))
                                 .thenReturn(Optional.of(perfectAttempt));
+                when(weaknessAnalysisRepository.save(any(WeaknessAnalysis.class)))
+                                .thenAnswer(invocation -> invocation.getArgument(0));
 
                 var response = quizService.analyzeWeaknesses(40L);
-
+                ArgumentCaptor<WeaknessAnalysis> analysisCaptor = ArgumentCaptor.forClass(WeaknessAnalysis.class);
+                verify(weaknessAnalysisRepository).save(analysisCaptor.capture());
+                assertSame(perfectAttempt, analysisCaptor.getValue().getQuizAttempt());
+                assertEquals("[]", analysisCaptor.getValue().getWeakTopicsJson());
+                verifyNoInteractions(chatClient);
                 assertNotNull(response);
                 assertNotNull(response.weakTopics());
                 assertTrue(response.weakTopics().isEmpty());
+        }
+
+        @Test
+        void analyzeWeaknessesSavesAndReturnsNonPerfectAnalysis() {
+                QuizAttempt attempt = QuizAttempt.builder()
+                                .id(602L)
+                                .quiz(quiz)
+                                .user(user)
+                                .score(4)
+                                .totalQuestions(5)
+                                .passed(true)
+                                .userAnswersJson("[0,0,0,0,1]")
+                                .build();
+                WeakTopic weakTopic = new WeakTopic(
+                                "Topic 105",
+                                "The final question was answered incorrectly.",
+                                "Review the topic and retry a practice question.",
+                                "LOW",
+                                "Choose the correct option for a sample question.");
+
+                when(attemptRepository
+                                .findFirstByQuizIdAndUserIdAndUserAnswersJsonIsNotNullOrderByAttemptedAtDesc(
+                                                40L, 10L))
+                                .thenReturn(Optional.of(attempt));
+                when(weaknessAnalysisRepository.save(any(WeaknessAnalysis.class)))
+                                .thenAnswer(invocation -> invocation.getArgument(0));
+                stubWeaknessAnalysisAiResponse("""
+                                [{"topicName":"Topic 105","reason":"The final question was answered incorrectly.","suggestion":"Review the topic and retry a practice question.","severity":"LOW","example":"Choose the correct option for a sample question."}]
+                                """);
+
+                var response = quizService.analyzeWeaknesses(40L);
+
+                ArgumentCaptor<WeaknessAnalysis> analysisCaptor = ArgumentCaptor.forClass(WeaknessAnalysis.class);
+                verify(weaknessAnalysisRepository).save(analysisCaptor.capture());
+                assertSame(attempt, analysisCaptor.getValue().getQuizAttempt());
+                assertEquals(List.of(weakTopic), response.weakTopics());
+                assertEquals(List.of(weakTopic),
+                                new tools.jackson.databind.ObjectMapper().readValue(
+                                                analysisCaptor.getValue().getWeakTopicsJson(),
+                                                new tools.jackson.core.type.TypeReference<List<WeakTopic>>() {
+                                                }));
+                verify(chatClient).prompt();
+        }
+
+        @Test
+        void analyzeWeaknessesReturnsCachedAnalysisOnSecondRequestForSameAttempt() {
+                QuizAttempt attempt = QuizAttempt.builder()
+                                .id(603L)
+                                .quiz(quiz)
+                                .user(user)
+                                .score(4)
+                                .totalQuestions(5)
+                                .passed(true)
+                                .userAnswersJson("[0,0,0,0,1]")
+                                .build();
+                AtomicReference<WeaknessAnalysis> savedAnalysis = new AtomicReference<>();
+
+                when(attemptRepository
+                                .findFirstByQuizIdAndUserIdAndUserAnswersJsonIsNotNullOrderByAttemptedAtDesc(
+                                                40L, 10L))
+                                .thenReturn(Optional.of(attempt));
+                when(weaknessAnalysisRepository.findByQuizAttemptId(603L))
+                                .thenAnswer(invocation -> Optional.ofNullable(savedAnalysis.get()));
+                when(weaknessAnalysisRepository.save(any(WeaknessAnalysis.class)))
+                                .thenAnswer(invocation -> {
+                                        WeaknessAnalysis analysis = invocation.getArgument(0);
+                                        savedAnalysis.set(analysis);
+                                        return analysis;
+                                });
+                stubWeaknessAnalysisAiResponse("""
+                                [{"topicName":"Topic 105","reason":"The final question was answered incorrectly.","suggestion":"Review the topic and retry a practice question.","severity":"LOW","example":"Choose the correct option for a sample question."}]
+                                """);
+
+                var firstResponse = quizService.analyzeWeaknesses(40L);
+                var secondResponse = quizService.analyzeWeaknesses(40L);
+
+                assertEquals(firstResponse.weakTopics(), secondResponse.weakTopics());
+                assertEquals(savedAnalysis.get().getGeneratedAt(), secondResponse.generatedAt());
+                verify(weaknessAnalysisRepository).save(any(WeaknessAnalysis.class));
+                verify(weaknessAnalysisRepository, times(2)).findByQuizAttemptId(603L);
+                verify(chatClient).prompt();
+        }
+
+        @Test
+        void analyzeWeaknessesStoresSeparateAnalysesForDifferentAttempts() {
+                QuizAttempt perfectAttempt = QuizAttempt.builder()
+                                .id(604L)
+                                .quiz(quiz)
+                                .user(user)
+                                .score(5)
+                                .totalQuestions(5)
+                                .passed(true)
+                                .userAnswersJson("[0,0,0,0,0]")
+                                .build();
+                QuizAttempt imperfectAttempt = QuizAttempt.builder()
+                                .id(605L)
+                                .quiz(quiz)
+                                .user(user)
+                                .score(4)
+                                .totalQuestions(5)
+                                .passed(true)
+                                .userAnswersJson("[0,0,0,0,1]")
+                                .build();
+                Map<Long, WeaknessAnalysis> analysesByAttemptId = new HashMap<>();
+
+                when(attemptRepository
+                                .findFirstByQuizIdAndUserIdAndUserAnswersJsonIsNotNullOrderByAttemptedAtDesc(
+                                                40L, 10L))
+                                .thenReturn(Optional.of(perfectAttempt), Optional.of(imperfectAttempt));
+                when(weaknessAnalysisRepository.findByQuizAttemptId(anyLong()))
+                                .thenAnswer(invocation -> Optional.ofNullable(
+                                                analysesByAttemptId.get(invocation.getArgument(0))));
+                when(weaknessAnalysisRepository.save(any(WeaknessAnalysis.class)))
+                                .thenAnswer(invocation -> {
+                                        WeaknessAnalysis analysis = invocation.getArgument(0);
+                                        analysesByAttemptId.put(analysis.getQuizAttempt().getId(), analysis);
+                                        return analysis;
+                                });
+                stubWeaknessAnalysisAiResponse("[]");
+
+                var perfectResponse = quizService.analyzeWeaknesses(40L);
+                var imperfectResponse = quizService.analyzeWeaknesses(40L);
+
+                assertTrue(perfectResponse.weakTopics().isEmpty());
+                assertTrue(imperfectResponse.weakTopics().isEmpty());
+                assertEquals(2, analysesByAttemptId.size());
+                assertSame(perfectAttempt, analysesByAttemptId.get(604L).getQuizAttempt());
+                assertSame(imperfectAttempt, analysesByAttemptId.get(605L).getQuizAttempt());
+                verify(weaknessAnalysisRepository).findByQuizAttemptId(604L);
+                verify(weaknessAnalysisRepository).findByQuizAttemptId(605L);
+                verify(weaknessAnalysisRepository, times(2)).save(any(WeaknessAnalysis.class));
+                verify(chatClient).prompt();
         }
 
         @Test
@@ -509,6 +656,16 @@ class QuizServiceTest {
                 assertThrows(
                                 AccessDeniedException.class,
                                 () -> quizService.getQuiz(40L));
+        }
+
+        private void stubWeaknessAnalysisAiResponse(String output) {
+                when(chatClient.prompt()
+                                .system(anyString())
+                                .user(anyString())
+                                .call()
+                                .content())
+                                .thenReturn(output);
+                clearInvocations(chatClient);
         }
 
 }
