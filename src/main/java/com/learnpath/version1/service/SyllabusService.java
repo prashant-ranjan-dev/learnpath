@@ -32,7 +32,9 @@ import java.util.List;
 @Service
 public class SyllabusService {
 
-        record AiSyllabusResponse(List<AiModule> modules) {
+        record AiSyllabusResponse(
+                        String description,
+                        List<AiModule> modules) {
         }
 
         record AiModule(
@@ -111,11 +113,13 @@ public class SyllabusService {
 
         private void validateAiSyllabus(AiSyllabusResponse response) {
                 if (response == null
+                                || response.description() == null
+                                || response.description().isBlank()
                                 || response.modules() == null
                                 || response.modules().size() < 4
                                 || response.modules().size() > 6) {
                         throw new AiResponseParsingException(
-                                        "AI syllabus must contain between 4 and 6 modules.",
+                                        "AI syllabus must contain a description and between 4 and 6 modules.",
                                         null);
                 }
 
@@ -199,8 +203,7 @@ public class SyllabusService {
                                 .currentUnderstanding(mapCurrentUnderstanding(request.currentUnderstanding()))
                                 .depthLevel(mapDepthLevel(request.depthLevel()))
                                 .goal(request.goal())
-                                .description("A learning path for " + request.topic()
-                                                + ", designed to help you " + request.goal() + ".")
+                                .description(aiResponse.description().trim())
                                 .user(userContext.getCurrentUser())
                                 .modules(new ArrayList<>())
                                 .build();
@@ -238,47 +241,52 @@ public class SyllabusService {
 
         private String buildPrompt(SyllabusRequest request) {
                 return """
-                                Topic: %s
-                                Current understanding: %s
-                                Desired depth: %s
-                                Goal: %s
+                                                                Topic: %s
+                                                                Current understanding: %s
+                                                                Desired depth: %s
+                                                                Goal: %s
 
-                                Produce exactly 4-6 modules. Each module must have:
-                                        - "title": a descriptive module title
-                                        - "description": 1-2 sentences explaining what the learner will understand or be able to do after this module
-                                        - "topics": a list of 3-5 topic objects, each containing:
-                                                - "name": a specific topic name
-                                                - "description": 1 concise sentence explaining what the topic covers
-                                                - "estimatedMinutes": a positive integer estimating how long the topic takes to study
-                                        - "estimatedHours": a number (e.g. 3.5) representing estimated hours
-
-                                Return ONLY a valid JSON object with a single key "modules", like:
-                                                {
-                                                        "modules": [
-                                                        {
-                                                        "title": "Java Fundamentals",
-                                                        "description": "Learn Java syntax and core programming constructs to build a foundation for object-oriented programming.",
-                                                        "topics": [
-                                                                {
-                                                                "name": "Variables and Data Types",
-                                                                "description": "Understand primitive types, reference types, declarations, and type conversion.",
-                                                                "estimatedMinutes": 60
-                                                                },
-                                                                {
-                                                                "name": "Control Flow",
-                                                                "description": "Use conditional statements and loops to control program execution.",
-                                                                "estimatedMinutes": 90
-                                                                },
-                                                                {
-                                                                "name": "Methods",
-                                                                "description": "Organize reusable logic into methods with parameters and return values.",
-                                                                "estimatedMinutes": 180
-                                                                }
-                                                        ],
-                                                        "estimatedHours": 5.5
-                                                        }
-                                                        ]
-                                                        }"""
+                                                                Produce exactly 4-6 modules. Each module must have:
+                                                                        - "title": a descriptive module title
+                                                                        - "description": 1-2 sentences explaining what the learner will understand or be able to do after this module
+                                                                        - "topics": a list of 3-5 topic objects, each containing:
+                                                                                - "name": a specific topic name
+                                                                                - "description": 1 concise sentence explaining what the topic covers
+                                                                                - "estimatedMinutes": a positive integer estimating how long the topic takes to study
+                                                                        - "estimatedHours": a number (e.g. 3.5) representing estimated hours
+                                                                Produce a top-level "description" field containing a concise, specific
+                                                                1-2 sentence summary of the entire learning path. Summarize the key
+                                                                technologies, concepts, or skills covered across the modules. Make it
+                                                                specific to the requested topic, current understanding, desired depth,
+                                                                and goal. Do not use generic wording such as "A learning path for...".
+                                                                Return ONLY a valid JSON object with a single key "modules", like:
+                                                                                {
+                                                                                        "description": "Build Java backend applications by learning core Java, object-oriented design, collections, Spring Boot, REST APIs, Hibernate, and PostgreSQL.",
+                                                                                        "modules": [
+                                                                                        {
+                                                                                        "title": "Java Fundamentals",
+                                                                                        "description": "Learn Java syntax and core programming constructs to build a foundation for object-oriented programming.",
+                                                                                        "topics": [
+                                                                                                {
+                                                                                                "name": "Variables and Data Types",
+                                                                                                "description": "Understand primitive types, reference types, declarations, and type conversion.",
+                                                                                                "estimatedMinutes": 60
+                                                                                                },
+                                                                                                {
+                                                                                                "name": "Control Flow",
+                                                                                                "description": "Use conditional statements and loops to control program execution.",
+                                                                                                "estimatedMinutes": 90
+                                                                                                },
+                                                                                                {
+                                                                                                "name": "Methods",
+                                                                                                "description": "Organize reusable logic into methods with parameters and return values.",
+                                                                                                "estimatedMinutes": 180
+                                                                                                }
+                                                                                        ],
+                                                                                        "estimatedHours": 5.5
+                                                                                        }
+                                                                                        ]
+                                                                                        }"""
                                 .formatted(request.topic(), request.currentUnderstanding(), request.depthLevel(),
                                                 request.goal());
 
