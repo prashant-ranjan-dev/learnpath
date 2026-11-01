@@ -253,7 +253,6 @@ public class SyllabusService {
                                         - "estimatedHours": a number (e.g. 3.5) representing estimated hours
 
                                 Return ONLY a valid JSON object with a single key "modules", like:
-                                        {
                                                 {
                                                         "modules": [
                                                         {
