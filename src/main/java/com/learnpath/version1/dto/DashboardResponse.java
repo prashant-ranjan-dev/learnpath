@@ -12,6 +12,7 @@ public record DashboardResponse(
         double progressPercent,
         int totalQuizAttempts,
         int passedQuizAttempts,
+        double averageQuizScorePercent,
         ContinueLearning continueLearning,
         List<LearningPathSummary> recentLearningPaths,
         List<RecentActivity> recentActivity) {
