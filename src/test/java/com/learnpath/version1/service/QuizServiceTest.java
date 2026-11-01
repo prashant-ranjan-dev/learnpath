@@ -544,6 +544,69 @@ class QuizServiceTest {
         }
 
         @Test
+        void analyzeWeaknessesNormalizesSeverityInCachedAnalysis() {
+                QuizAttempt attempt = QuizAttempt.builder()
+                                .id(606L)
+                                .quiz(quiz)
+                                .user(user)
+                                .score(4)
+                                .totalQuestions(5)
+                                .passed(true)
+                                .userAnswersJson("[0,0,0,0,1]")
+                                .build();
+                WeaknessAnalysis cachedAnalysis = WeaknessAnalysis.builder()
+                                .quizAttempt(attempt)
+                                .weakTopicsJson("""
+                                                [{"topicName":"Topic 105","reason":"Reason","suggestion":"Suggestion","severity":"  low  ","example":"Example"}]
+                                                """)
+                                .generatedAt(java.time.LocalDateTime.of(2026, 10, 31, 17, 30))
+                                .build();
+
+                when(attemptRepository
+                                .findFirstByQuizIdAndUserIdAndUserAnswersJsonIsNotNullOrderByAttemptedAtDesc(
+                                                40L, 10L))
+                                .thenReturn(Optional.of(attempt));
+                when(weaknessAnalysisRepository.findByQuizAttemptId(606L))
+                                .thenReturn(Optional.of(cachedAnalysis));
+
+                var response = quizService.analyzeWeaknesses(40L);
+
+                assertEquals("LOW", response.weakTopics().get(0).severity());
+                assertEquals("Topic 105", response.weakTopics().get(0).topicName());
+                assertEquals(cachedAnalysis.getGeneratedAt(), response.generatedAt());
+                verifyNoInteractions(chatClient);
+                verify(weaknessAnalysisRepository, never()).save(any(WeaknessAnalysis.class));
+        }
+
+        @Test
+        void analyzeWeaknessesRejectsCachedAnalysisWithNullTopic() {
+                QuizAttempt attempt = completedAttempt(607L);
+                WeaknessAnalysis cachedAnalysis = cachedAnalysis(attempt, "[null]");
+                stubCachedAnalysis(attempt, cachedAnalysis);
+
+                assertThrows(
+                                IllegalStateException.class,
+                                () -> quizService.analyzeWeaknesses(40L));
+
+                verifyNoInteractions(chatClient);
+        }
+
+        @Test
+        void analyzeWeaknessesRejectsCachedAnalysisWithBlankSeverity() {
+                QuizAttempt attempt = completedAttempt(608L);
+                WeaknessAnalysis cachedAnalysis = cachedAnalysis(attempt, """
+                                [{"topicName":"Topic 105","reason":"Reason","suggestion":"Suggestion","severity":"  ","example":"Example"}]
+                                """);
+                stubCachedAnalysis(attempt, cachedAnalysis);
+
+                assertThrows(
+                                IllegalStateException.class,
+                                () -> quizService.analyzeWeaknesses(40L));
+
+                verifyNoInteractions(chatClient);
+        }
+
+        @Test
         void analyzeWeaknessesStoresSeparateAnalysesForDifferentAttempts() {
                 QuizAttempt perfectAttempt = QuizAttempt.builder()
                                 .id(604L)
@@ -666,6 +729,35 @@ class QuizServiceTest {
                                 .content())
                                 .thenReturn(output);
                 clearInvocations(chatClient);
+        }
+
+        private QuizAttempt completedAttempt(Long id) {
+                return QuizAttempt.builder()
+                                .id(id)
+                                .quiz(quiz)
+                                .user(user)
+                                .score(4)
+                                .totalQuestions(5)
+                                .passed(true)
+                                .userAnswersJson("[0,0,0,0,1]")
+                                .build();
+        }
+
+        private WeaknessAnalysis cachedAnalysis(QuizAttempt attempt, String weakTopicsJson) {
+                return WeaknessAnalysis.builder()
+                                .quizAttempt(attempt)
+                                .weakTopicsJson(weakTopicsJson)
+                                .generatedAt(java.time.LocalDateTime.now())
+                                .build();
+        }
+
+        private void stubCachedAnalysis(QuizAttempt attempt, WeaknessAnalysis analysis) {
+                when(attemptRepository
+                                .findFirstByQuizIdAndUserIdAndUserAnswersJsonIsNotNullOrderByAttemptedAtDesc(
+                                                40L, 10L))
+                                .thenReturn(Optional.of(attempt));
+                when(weaknessAnalysisRepository.findByQuizAttemptId(attempt.getId()))
+                                .thenReturn(Optional.of(analysis));
         }
 
 }
