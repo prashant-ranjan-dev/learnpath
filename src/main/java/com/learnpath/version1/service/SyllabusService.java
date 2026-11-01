@@ -160,10 +160,10 @@ public class SyllabusService {
                 // Validate the AI response before attempting JSON extraction.
                 if (aiOutput == null || aiOutput.isBlank()) {
                         throw new AiResponseParsingException(
-                                "AI returned an empty syllabus response. Please try again.",
-                                null);
+                                        "AI returned an empty syllabus response. Please try again.",
+                                        null);
                 }
-                                        
+
                 // Extract the Json from the AI Response
                 String json = extractJson(aiOutput);
                 AiSyllabusResponse aiResponse;
@@ -396,6 +396,14 @@ public class SyllabusService {
                                 .filter(QuizAttempt::isPassed)
                                 .count();
 
+                double averageQuizScorePercent = attempts.stream()
+                                .filter(attempt -> attempt.getTotalQuestions() > 0)
+                                .mapToDouble(attempt -> attempt.getScore() * 100.0 / attempt.getTotalQuestions())
+                                .average()
+                                .orElse(0.0);
+
+                averageQuizScorePercent = Math.round(averageQuizScorePercent * 100.0) / 100.0;
+
                 for (QuizAttempt attempt : attempts) {
                         if (attempt.getQuiz() == null
                                         || attempt.getQuiz().getModule() == null
@@ -458,6 +466,7 @@ public class SyllabusService {
                                 overallProgress,
                                 attempts.size(),
                                 passedAttempts,
+                                averageQuizScorePercent,
                                 continueLearning,
                                 recentPaths.stream().limit(5).toList(),
                                 activities.stream().limit(10).toList());
