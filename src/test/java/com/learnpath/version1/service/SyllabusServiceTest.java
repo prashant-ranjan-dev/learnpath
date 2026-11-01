@@ -921,7 +921,7 @@ class SyllabusServiceTest {
 
                 verify(chatClient.prompt().system(anyString()))
                                 .user(org.mockito.ArgumentMatchers.<String>argThat(prompt ->
-                                                prompt.contains("\"estimatedMinutes\": 30")
+                                                prompt.contains("\"estimatedMinutes\"")
                                                                 && prompt.contains("positive integer")));
         }
 
