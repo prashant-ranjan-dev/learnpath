@@ -7,6 +7,9 @@ import lombok.*;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.hibernate.annotations.CreationTimestamp;
+import java.time.LocalDateTime;
+
 @Entity
 @Table(name = "users")
 @Getter
@@ -30,11 +33,20 @@ public class User {
 
     private String name;
 
+    @Column(unique = true, length = 50)
+    private String username;
+
+    @Column(length = 500)
+    private String bio;
+
+    @Column(length = 100)
+    private String headline;
+
+    @CreationTimestamp
+    @Column(nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
     @Builder.Default
-    @OneToMany(
-            mappedBy = "user",
-            cascade = CascadeType.ALL,
-            orphanRemoval = true
-    )
+    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<Syllabus> syllabi = new ArrayList<>();
 }

@@ -19,39 +19,77 @@ public class UserController {
     private final UserContext userContext;
     private final SyllabusService syllabusService;
 
-
     public UserController(
-        UserContext userContext,
-        SyllabusService syllabusService) {
-    this.userContext = userContext;
-    this.syllabusService = syllabusService;
-}
+            UserContext userContext,
+            SyllabusService syllabusService) {
+        this.userContext = userContext;
+        this.syllabusService = syllabusService;
+    }
 
     @GetMapping("/profile")
-    public ResponseEntity<UserProfileResponse> getProfile(){
+    public ResponseEntity<UserProfileResponse> getProfile() {
         User user = userContext.getCurrentUser();
-        return ResponseEntity.ok(new UserProfileResponse(user.getName(), user.getEmail()));
+        return ResponseEntity.ok(toProfileResponse(user));
+    }
 
+    @PutMapping("/profile")
+    public ResponseEntity<UserProfileResponse> updateProfile(
+            @Valid @RequestBody UpdateProfileRequest request) {
+
+        User user = userContext.getCurrentUser();
+        user.setName(request.name().trim());
+        user.setUsername(normalizeOptional(request.username()));
+        user.setBio(normalizeOptional(request.bio()));
+        user.setHeadline(normalizeOptional(request.headline()));
+
+        userContext.saveUser(user);
+        return ResponseEntity.ok(toProfileResponse(user));
     }
 
     @GetMapping("/dashboard")
-public ResponseEntity<DashboardResponse> getDashboard() {
-    User user = userContext.getCurrentUser();
-    return ResponseEntity.ok(
-            syllabusService.getDashboardSummary(user));
-}
-
-    @PutMapping("/profile")
-    public ResponseEntity<UserProfileResponse> updateProfile(@Valid @RequestBody UpdateProfileRequest request){
+    public ResponseEntity<DashboardResponse> getDashboard() {
         User user = userContext.getCurrentUser();
-        user.setName(request.name());
-        userContext.saveUser(user);
-        return ResponseEntity.ok(new UserProfileResponse(user.getName(), user.getEmail()));
+        return ResponseEntity.ok(
+                syllabusService.getDashboardSummary(user));
+    }
+    
+    private UserProfileResponse toProfileResponse(User user) {
+        return new UserProfileResponse(
+                user.getId(),
+                user.getName(),
+                user.getEmail(),
+                user.getUsername(),
+                user.getBio(),
+                user.getHeadline(),
+                user.getCreatedAt());
     }
 
-    public record UserProfileResponse(String name, String email){}
+    private String normalizeOptional(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim();
+    }
+
+    public record UserProfileResponse(
+            Long id,
+            String name,
+            String email,
+            String username,
+            String bio,
+            String headline,
+            java.time.LocalDateTime createdAt) {
+    }
+
     public record UpdateProfileRequest(
-        @NotBlank (message = "Name is required")
-        @Size (max = 100, message = "Name must not exceed 100 characters")
-        String name){}
+            @NotBlank(message = "Name is required") @Size(max = 100, message = "Name must not exceed 100 characters") String name,
+
+            @Size(max = 50, message = "Username must not exceed 50 characters") @jakarta.validation.constraints.Pattern(regexp = "^[A-Za-z0-9_]*$", message = "Username may contain only letters, numbers, and underscores") String username,
+
+            @Size(max = 500, message = "Bio must not exceed 500 characters") String bio,
+
+            @Size(max = 100, message = "Headline must not exceed 100 characters") String headline) {
+    }
+
+
 }
