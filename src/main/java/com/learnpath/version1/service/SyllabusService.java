@@ -23,6 +23,9 @@ import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
+import java.time.LocalDateTime;
+import java.util.Comparator;
+import java.util.Objects;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -260,7 +263,12 @@ public class SyllabusService {
 
         @Transactional(readOnly = true)
         public DashboardResponse getDashboardSummary(User user) {
-                List<Syllabus> syllabi = syllabusRepository.findByUserOrderByCreatedAtDesc(user);
+                List<Syllabus> syllabi = new ArrayList<>(
+                                syllabusRepository.findByUserOrderByCreatedAtDesc(user));
+
+                Comparator<LocalDateTime> newestFirst = Comparator.nullsLast(Comparator.reverseOrder());
+
+                syllabi.sort(Comparator.comparing(this::lastActiveAt, newestFirst));
 
                 int totalModules = 0;
                 int completedModules = 0;
@@ -268,6 +276,10 @@ public class SyllabusService {
                 int completedTopics = 0;
 
                 List<DashboardResponse.LearningPathSummary> recentPaths = new ArrayList<>();
+
+                DashboardResponse.ContinueLearning continueLearning = null;
+
+                List<DashboardResponse.RecentActivity> activities = new ArrayList<>();
 
                 for (Syllabus syllabus : syllabi) {
                         SyllabusResponse response = toResponseWithIds(syllabus);
@@ -291,19 +303,79 @@ public class SyllabusService {
                                         ? 0.0
                                         : pathCompletedTopics * 100.0 / pathTotalTopics;
 
+                        pathProgress = Math.round(pathProgress * 100.0) / 100.0;
+
                         totalModules += pathTotalModules;
                         completedModules += pathCompletedModules;
                         totalTopics += pathTotalTopics;
                         completedTopics += pathCompletedTopics;
 
+                        String status;
+                        if (pathTotalTopics > 0 && pathCompletedTopics == pathTotalTopics) {
+                                status = "COMPLETED";
+                        } else if (pathCompletedTopics == 0) {
+                                status = "NOT_STARTED";
+                        } else {
+                                status = "IN_PROGRESS";
+                        }
+
                         recentPaths.add(new DashboardResponse.LearningPathSummary(
                                         syllabus.getId(),
                                         syllabus.getTopic(),
+                                        isBlank(syllabus.getDescription())
+                                                        ? syllabus.getTopic()
+                                                        : syllabus.getDescription(),
+                                        response.totalEstimatedHours(),
                                         pathTotalModules,
                                         pathCompletedModules,
                                         pathTotalTopics,
                                         pathCompletedTopics,
-                                        Math.round(pathProgress * 100.0) / 100.0));
+                                        pathProgress,
+                                        status,
+                                        lastActiveAt(syllabus)));
+
+                        if (continueLearning == null && response.nextTopic() != null) {
+                                SyllabusResponse.NextTopic next = response.nextTopic();
+
+                                continueLearning = new DashboardResponse.ContinueLearning(
+                                                syllabus.getId(),
+                                                syllabus.getTopic(),
+                                                next.moduleId(),
+                                                next.moduleTitle(),
+                                                next.topicId(),
+                                                next.topicName());
+                        }
+
+                        if (syllabus.getModules() == null) {
+                                continue;
+                        }
+
+                        for (SyllabusModule module : syllabus.getModules()) {
+                                if (module == null || module.getTopics() == null) {
+                                        continue;
+                                }
+
+                                for (Topic topic : module.getTopics()) {
+                                        if (topic == null
+                                                        || !topic.isCompleted()
+                                                        || topic.getCompletedAt() == null) {
+                                                continue;
+                                        }
+
+                                        activities.add(new DashboardResponse.RecentActivity(
+                                                        "TOPIC_COMPLETED",
+                                                        syllabus.getId(),
+                                                        syllabus.getTopic(),
+                                                        module.getId(),
+                                                        module.getTitle(),
+                                                        topic.getId(),
+                                                        topic.getName(),
+                                                        topic.getCompletedAt(),
+                                                        "COMPLETED",
+                                                        null,
+                                                        null));
+                                }
+                        }
                 }
 
                 List<QuizAttempt> attempts = quizAttemptRepository
@@ -314,9 +386,58 @@ public class SyllabusService {
                                 .filter(QuizAttempt::isPassed)
                                 .count();
 
+                for (QuizAttempt attempt : attempts) {
+                        if (attempt.getQuiz() == null
+                                        || attempt.getQuiz().getModule() == null
+                                        || attempt.getQuiz().getModule().getSyllabus() == null) {
+                                continue;
+                        }
+
+                        Quiz quiz = attempt.getQuiz();
+                        SyllabusModule module = quiz.getModule();
+                        Syllabus syllabus = module.getSyllabus();
+
+                        // The repository query is user-scoped. This additional check
+                        // prevents activity for paths outside this user's dashboard.
+                        boolean belongsToUser = syllabi.stream()
+                                        .anyMatch(path -> Objects.equals(
+                                                        path.getId(), syllabus.getId()));
+
+                        if (!belongsToUser) {
+                                continue;
+                        }
+
+                        LocalDateTime occurredAt = attempt.getSubmittedAt() != null
+                                        ? attempt.getSubmittedAt()
+                                        : attempt.getAttemptedAt();
+
+                        if (occurredAt == null) {
+                                continue;
+                        }
+
+                        activities.add(new DashboardResponse.RecentActivity(
+                                        "QUIZ_SUBMITTED",
+                                        syllabus.getId(),
+                                        syllabus.getTopic(),
+                                        module.getId(),
+                                        module.getTitle(),
+                                        quiz.getId(),
+                                        quiz.getTitle(),
+                                        occurredAt,
+                                        attempt.isPassed() ? "PASSED" : "FAILED",
+                                        attempt.getScore(),
+                                        attempt.getTotalQuestions()));
+                }
+
+                activities.sort(Comparator.comparing(
+                                DashboardResponse.RecentActivity::occurredAt,
+                                newestFirst));
+
                 double overallProgress = totalTopics == 0
                                 ? 0.0
                                 : completedTopics * 100.0 / totalTopics;
+
+                overallProgress = Math.round(overallProgress * 100.0) / 100.0;
 
                 return new DashboardResponse(
                                 syllabi.size(),
@@ -324,10 +445,19 @@ public class SyllabusService {
                                 completedModules,
                                 totalTopics,
                                 completedTopics,
-                                Math.round(overallProgress * 100.0) / 100.0,
+                                overallProgress,
                                 attempts.size(),
                                 passedAttempts,
-                                recentPaths.stream().limit(5).toList());
+                                continueLearning,
+                                recentPaths.stream().limit(5).toList(),
+                                activities.stream().limit(10).toList());
+        }
+
+        private LocalDateTime lastActiveAt(Syllabus syllabus) {
+                if (syllabus.getUpdatedAt() != null) {
+                        return syllabus.getUpdatedAt();
+                }
+                return syllabus.getCreatedAt();
         }
 
         private String extractJson(String raw) {
