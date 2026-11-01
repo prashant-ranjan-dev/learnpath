@@ -1,5 +1,7 @@
 package com.learnpath.version1.entities;
 
+import java.time.LocalDateTime;
+
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -32,6 +34,9 @@ public class Topic {
     @Builder.Default
     @Column(nullable = false, columnDefinition = "boolean default false")
     private boolean completed = false;
+
+    @Column 
+    private LocalDateTime completedAt;
 
     @ManyToOne
     @JoinColumn(name = "syllabus_module_id")
