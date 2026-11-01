@@ -7,6 +7,7 @@ import com.learnpath.version1.exception.ResourceNotFoundException;
 import com.learnpath.version1.repositories.ModuleRepository;
 import com.learnpath.version1.repositories.QuizAttemptRepository;
 import com.learnpath.version1.repositories.QuizRepository;
+import com.learnpath.version1.repositories.WeaknessAnalysisRepository;
 import com.learnpath.version1.utility.UserContext;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.security.access.AccessDeniedException;
@@ -32,6 +33,7 @@ public class QuizService {
         private final ModuleRepository moduleRepository;
         private final QuizRepository quizRepository;
         private final QuizAttemptRepository attemptRepository;
+        private final WeaknessAnalysisRepository weaknessAnalysisRepository;
         private final ChatClient chatClient;
         private final ObjectMapper objectMapper;
         private final UserContext userContext;
@@ -40,12 +42,15 @@ public class QuizService {
                         ModuleRepository moduleRepository,
                         QuizRepository quizRepository,
                         QuizAttemptRepository attemptRepository,
+                        WeaknessAnalysisRepository weaknessAnalysisRepository,
                         ChatClient.Builder chatClientBuilder,
                         ObjectMapper objectMapper,
                         UserContext userContext) {
+
                 this.moduleRepository = moduleRepository;
                 this.quizRepository = quizRepository;
                 this.attemptRepository = attemptRepository;
+                this.weaknessAnalysisRepository = weaknessAnalysisRepository;
                 this.chatClient = chatClientBuilder.build();
                 this.objectMapper = objectMapper;
                 this.userContext = userContext;
@@ -451,6 +456,13 @@ public class QuizService {
                                 .orElseThrow(() -> new ResourceNotFoundException(
                                                 "No completed quiz attempt found for this user"));
 
+                Optional<WeaknessAnalysis> existingAnalysis = weaknessAnalysisRepository
+                                .findByQuizAttemptId(attempt.getId());
+
+                if (existingAnalysis.isPresent()) {
+                        return toWeaknessAnalysisResponse(existingAnalysis.get());
+                }
+
                 List<QuizQuestion> questions = quiz.getQuestions();
                 validateQuizQuestions(quiz, "analyzed");
 
@@ -475,9 +487,7 @@ public class QuizService {
                 }
 
                 if (wrongQuestionsInfo.isEmpty()) {
-                        return new WeaknessAnalysisResponse(
-                                        List.of(),
-                                        LocalDateTime.now());
+                        return saveWeaknessAnalysis(attempt, List.of());
                 }
 
                 List<Topic> topics = quiz.getModule().getTopics();
@@ -504,7 +514,7 @@ public class QuizService {
                 }
 
                 String prompt = """
-                                                                Identify the weak topics or concepts the learner should review.
+                                Identify the weak topics or concepts the learner should review.
                                 For each entry provide:
                                 - topicName: short title of the weak concept
                                 - reason: why the learner struggled
@@ -515,6 +525,12 @@ public class QuizService {
 
                                 Choose severity based on how fundamental the concept is and how
                                 strongly the incorrect answers indicate a learning gap.
+
+                                Incorrect answers:
+                                %s
+
+                                Available learning content:
+                                %s
 
                                 Return ONLY a JSON array:
                                 [
@@ -528,8 +544,7 @@ public class QuizService {
                                 ]
 
                                 Do not include Markdown fences or extra text.
-                                                                """
-                                .formatted(wrongQuestionsInfo, topicsContent);
+                                """.formatted(wrongQuestionsInfo, topicsContent);
 
                 String aiOutput = chatClient.prompt()
                                 .system(
@@ -556,15 +571,11 @@ public class QuizService {
 
                         for (WeakTopic topic : weakTopics) {
                                 if (topic == null
-                                                || topic.topicName() == null
-                                                || topic.topicName().isBlank()
-                                                || topic.reason() == null
-                                                || topic.reason().isBlank()
-                                                || topic.suggestion() == null
-                                                || topic.suggestion().isBlank()
-                                                || topic.example() == null
-                                                || topic.example().isBlank()
-                                                || topic.severity() == null
+                                                || isBlank(topic.topicName())
+                                                || isBlank(topic.reason())
+                                                || isBlank(topic.suggestion())
+                                                || isBlank(topic.example())
+                                                || isBlank(topic.severity())
                                                 || !List.of("HIGH", "MEDIUM", "LOW")
                                                                 .contains(topic.severity().trim().toUpperCase())) {
                                         throw new IllegalArgumentException(
@@ -572,12 +583,62 @@ public class QuizService {
                                 }
                         }
 
-                        return new WeaknessAnalysisResponse(
-                                        weakTopics,
-                                        LocalDateTime.now());
+                        return saveWeaknessAnalysis(attempt, weakTopics);
                 } catch (Exception e) {
                         throw new IllegalStateException(
                                         "Failed to parse or validate weakness analysis JSON.", e);
+                }
+        }
+
+        private WeaknessAnalysisResponse saveWeaknessAnalysis(
+                        QuizAttempt attempt,
+                        List<WeakTopic> weakTopics) {
+
+                LocalDateTime generatedAt = LocalDateTime.now();
+
+                String weakTopicsJson;
+                try {
+                        weakTopicsJson = objectMapper.writeValueAsString(weakTopics);
+                } catch (Exception e) {
+                        throw new IllegalStateException(
+                                        "Failed to serialize weakness analysis.", e);
+                }
+
+                WeaknessAnalysis analysis = WeaknessAnalysis.builder()
+                                .quizAttempt(attempt)
+                                .weakTopicsJson(weakTopicsJson)
+                                .generatedAt(generatedAt)
+                                .build();
+
+                WeaknessAnalysis savedAnalysis = weaknessAnalysisRepository.save(analysis);
+
+                LocalDateTime responseTimestamp = savedAnalysis.getGeneratedAt() != null
+                                ? savedAnalysis.getGeneratedAt()
+                                : generatedAt;
+
+                return new WeaknessAnalysisResponse(weakTopics, responseTimestamp);
+        }
+
+        private WeaknessAnalysisResponse toWeaknessAnalysisResponse(
+                        WeaknessAnalysis analysis) {
+
+                try {
+                        List<WeakTopic> weakTopics = objectMapper.readValue(
+                                        analysis.getWeakTopicsJson(),
+                                        new TypeReference<List<WeakTopic>>() {
+                                        });
+
+                        if (weakTopics == null) {
+                                throw new IllegalStateException(
+                                                "Stored weakness analysis contains a null result.");
+                        }
+
+                        return new WeaknessAnalysisResponse(
+                                        weakTopics,
+                                        analysis.getGeneratedAt());
+                } catch (Exception e) {
+                        throw new IllegalStateException(
+                                        "Failed to read stored weakness analysis.", e);
                 }
         }
 
