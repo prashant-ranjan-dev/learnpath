@@ -569,21 +569,35 @@ public class QuizService {
                                                 "AI returned a null weakness analysis.");
                         }
 
+                        List<WeakTopic> normalizedTopics = new ArrayList<>();
+
                         for (WeakTopic topic : weakTopics) {
                                 if (topic == null
                                                 || isBlank(topic.topicName())
                                                 || isBlank(topic.reason())
                                                 || isBlank(topic.suggestion())
                                                 || isBlank(topic.example())
-                                                || isBlank(topic.severity())
-                                                || !List.of("HIGH", "MEDIUM", "LOW")
-                                                                .contains(topic.severity().trim().toUpperCase())) {
+                                                || isBlank(topic.severity())) {
                                         throw new IllegalArgumentException(
                                                         "AI returned an incomplete or invalid weakness analysis entry.");
                                 }
+
+                                String severity = topic.severity().trim().toUpperCase(java.util.Locale.ROOT);
+
+                                if (!List.of("HIGH", "MEDIUM", "LOW").contains(severity)) {
+                                        throw new IllegalArgumentException(
+                                                        "AI returned an incomplete or invalid weakness analysis entry.");
+                                }
+
+                                normalizedTopics.add(new WeakTopic(
+                                                topic.topicName().trim(),
+                                                topic.reason().trim(),
+                                                topic.suggestion().trim(),
+                                                severity,
+                                                topic.example().trim()));
                         }
 
-                        return saveWeaknessAnalysis(attempt, weakTopics);
+                        return saveWeaknessAnalysis(attempt, normalizedTopics);
                 } catch (Exception e) {
                         throw new IllegalStateException(
                                         "Failed to parse or validate weakness analysis JSON.", e);
