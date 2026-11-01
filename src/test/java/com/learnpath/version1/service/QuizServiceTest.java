@@ -459,4 +459,56 @@ class QuizServiceTest {
                                 () -> quizService.analyzeWeaknesses(40L));
         }
 
+        @Test
+        void getQuizRejectsQuizWithoutModule() {
+                quiz.setModule(null);
+
+                assertThrows(
+                                IllegalStateException.class,
+                                () -> quizService.getQuiz(40L));
+        }
+
+        @Test
+        void getQuizRejectsInvalidPreviousModuleInSequence() {
+                Syllabus syllabus = quiz.getModule().getSyllabus();
+
+                List<SyllabusModule> invalidSequence = new ArrayList<>();
+                invalidSequence.add(null);
+                invalidSequence.add(quiz.getModule());
+
+                syllabus.setModules(invalidSequence);
+
+                assertThrows(
+                                IllegalStateException.class,
+                                () -> quizService.getQuiz(40L));
+        }
+
+        @Test
+        void generateQuizRejectsModuleWithoutValidOwnerRelationship() {
+                SyllabusModule module = quiz.getModule();
+                module.setSyllabus(null);
+
+                when(moduleRepository.findById(30L))
+                                .thenReturn(Optional.of(module));
+
+                assertThrows(
+                                IllegalStateException.class,
+                                () -> quizService.generateQuiz(30L));
+        }
+
+        @Test
+        void getQuizRejectsAccessByAnotherUser() {
+                User anotherUser = User.builder()
+                                .id(999L)
+                                .email("other@example.com")
+                                .password("test-password")
+                                .build();
+
+                when(userContext.getCurrentUser()).thenReturn(anotherUser);
+
+                assertThrows(
+                                AccessDeniedException.class,
+                                () -> quizService.getQuiz(40L));
+        }
+
 }
