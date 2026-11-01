@@ -12,8 +12,9 @@ import com.learnpath.version1.repositories.TopicRepository;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import java.util.List;
 
+import java.time.LocalDateTime;
+import java.util.List;
 
 @Service
 public class ContentService {
@@ -22,49 +23,50 @@ public class ContentService {
     private final QuizRepository quizRepository;
     private final QuizAttemptRepository quizAttemptRepository;
 
-    public ContentService(TopicRepository topicRepository, ChatClient.Builder chatBuilderBuilder, QuizRepository quizRepository, QuizAttemptRepository quizAttemptRepository) {
+    public ContentService(TopicRepository topicRepository, ChatClient.Builder chatBuilderBuilder,
+            QuizRepository quizRepository, QuizAttemptRepository quizAttemptRepository) {
         this.topicRepository = topicRepository;
         this.chatClient = chatBuilderBuilder.build();
         this.quizRepository = quizRepository;
-this.quizAttemptRepository = quizAttemptRepository;
+        this.quizAttemptRepository = quizAttemptRepository;
     }
 
     private void verifyModuleUnlocked(SyllabusModule module, Long userId) {
-    List<SyllabusModule> modules = module.getSyllabus().getModules();
+        List<SyllabusModule> modules = module.getSyllabus().getModules();
 
-    int currentIndex = -1;
+        int currentIndex = -1;
 
-    for (int i = 0; i < modules.size(); i++) {
-        if (modules.get(i).getId().equals(module.getId())) {
-            currentIndex = i;
-            break;
+        for (int i = 0; i < modules.size(); i++) {
+            if (modules.get(i).getId().equals(module.getId())) {
+                currentIndex = i;
+                break;
+            }
+        }
+
+        if (currentIndex == -1) {
+            throw new IllegalStateException(
+                    "Module does not belong to the syllabus.");
+        }
+
+        // The first module is always unlocked.
+        if (currentIndex == 0) {
+            return;
+        }
+
+        SyllabusModule previousModule = modules.get(currentIndex - 1);
+
+        boolean previousModulePassed = quizRepository
+                .findByModuleId(previousModule.getId())
+                .map(Quiz::getId)
+                .map(quizId -> quizAttemptRepository
+                        .existsByQuizIdAndUserIdAndPassedTrue(quizId, userId))
+                .orElse(false);
+
+        if (!previousModulePassed) {
+            throw new IllegalStateException(
+                    "Complete the previous module and pass its quiz to unlock this module.");
         }
     }
-
-    if (currentIndex == -1) {
-        throw new IllegalStateException(
-                "Module does not belong to the syllabus.");
-    }
-
-    // The first module is always unlocked.
-    if (currentIndex == 0) {
-        return;
-    }
-
-    SyllabusModule previousModule = modules.get(currentIndex - 1);
-
-    boolean previousModulePassed = quizRepository
-            .findByModuleId(previousModule.getId())
-            .map(Quiz::getId)
-            .map(quizId -> quizAttemptRepository
-                    .existsByQuizIdAndUserIdAndPassedTrue(quizId, userId))
-            .orElse(false);
-
-    if (!previousModulePassed) {
-        throw new IllegalStateException(
-                "Complete the previous module and pass its quiz to unlock this module.");
-    }
-}
 
     @Transactional
     public ContentResponse getOrGenerateContent(Long topicId) {
@@ -100,7 +102,7 @@ this.quizAttemptRepository = quizAttemptRepository;
             throw new org.springframework.security.access.AccessDeniedException(
                     "You are not authorized to access this topic");
         }
-        
+
         verifyModuleUnlocked(module, userId);
 
         return getOrGenerateContent(topicId);
@@ -128,8 +130,15 @@ this.quizAttemptRepository = quizAttemptRepository;
 
         verifyModuleUnlocked(module, userId);
 
+        // Record the first completion only; repeated requests remain idempotent.
         if (!topic.isCompleted()) {
+            LocalDateTime completedAt = LocalDateTime.now();
+
             topic.setCompleted(true);
+            topic.setCompletedAt(completedAt);
+
+            syllabus.setUpdatedAt(completedAt);
+
             topicRepository.save(topic);
         }
     }
