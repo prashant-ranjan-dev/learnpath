@@ -16,6 +16,7 @@ import com.learnpath.version1.utility.UserContext;
 import com.learnpath.version1.exception.AiResponseParsingException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.Answers;
@@ -116,12 +117,16 @@ class SyllabusServiceTest {
                 QuizAttempt passedAttempt = QuizAttempt.builder()
                                 .id(201L)
                                 .passed(true)
+                                .score(3)
+                                .totalQuestions(4)
                                 .userAnswersJson("[0,1,2]")
                                 .build();
 
                 QuizAttempt failedAttempt = QuizAttempt.builder()
                                 .id(202L)
                                 .passed(false)
+                                .score(1)
+                                .totalQuestions(2)
                                 .userAnswersJson("[1,0,2]")
                                 .build();
 
@@ -147,6 +152,7 @@ class SyllabusServiceTest {
 
                 assertEquals(2, response.totalQuizAttempts());
                 assertEquals(1, response.passedQuizAttempts());
+                assertEquals(62.5, response.averageQuizScorePercent());
 
                 assertEquals(1, response.recentLearningPaths().size());
                 assertEquals(
@@ -183,9 +189,47 @@ class SyllabusServiceTest {
                 assertEquals(0.0, response.progressPercent());
                 assertEquals(0, response.totalQuizAttempts());
                 assertEquals(0, response.passedQuizAttempts());
+                assertEquals(0.0, response.averageQuizScorePercent());
                 assertEquals(0, response.recentLearningPaths().size());
                 assertEquals(null, response.continueLearning());
                 assertEquals(0, response.recentActivity().size());
+        }
+
+        @Test
+        void getDashboardSummaryAveragesValidQuizScoresAndRoundsToTwoDecimalPlaces() {
+                User user = User.builder()
+                                .id(11L)
+                                .email("average-score@example.com")
+                                .password("test-password")
+                                .name("Average Score User")
+                                .build();
+
+                QuizAttempt oneOfThree = QuizAttempt.builder()
+                                .score(1)
+                                .totalQuestions(3)
+                                .userAnswersJson("[0,1,1]")
+                                .build();
+                QuizAttempt oneOfTwo = QuizAttempt.builder()
+                                .score(1)
+                                .totalQuestions(2)
+                                .userAnswersJson("[0,1]")
+                                .build();
+                QuizAttempt invalidTotal = QuizAttempt.builder()
+                                .score(5)
+                                .totalQuestions(0)
+                                .userAnswersJson("[]")
+                                .build();
+
+                when(syllabusRepository.findByUserOrderByCreatedAtDesc(user))
+                                .thenReturn(List.of());
+                when(quizAttemptRepository
+                                .findByUserIdAndUserAnswersJsonIsNotNullOrderByAttemptedAtDesc(11L))
+                                .thenReturn(List.of(oneOfThree, oneOfTwo, invalidTotal));
+
+                DashboardResponse response = syllabusService.getDashboardSummary(user);
+
+                assertEquals(3, response.totalQuizAttempts());
+                assertEquals(41.67, response.averageQuizScorePercent());
         }
 
         @Test
@@ -636,18 +680,45 @@ class SyllabusServiceTest {
         }
 
         @Test
+        void generateSyllabusRejectsTooManyModules() throws Exception {
+                stubAiOutput("{\"modules\":[]}");
+
+                when(objectMapper.readValue(
+                                anyString(),
+                                eq(SyllabusService.AiSyllabusResponse.class)))
+                                .thenReturn(new SyllabusService.AiSyllabusResponse(List.of(
+                                                validAiModule("Module 1"),
+                                                validAiModule("Module 2"),
+                                                validAiModule("Module 3"),
+                                                validAiModule("Module 4"),
+                                                validAiModule("Module 5"),
+                                                validAiModule("Module 6"),
+                                                validAiModule("Module 7"))));
+
+                assertThrows(
+                                AiResponseParsingException.class,
+                                () -> syllabusService.generateSyllabus(validRequest()));
+
+                verify(syllabusRepository, never()).save(
+                                org.mockito.ArgumentMatchers.any(Syllabus.class));
+        }
+
+        @Test
         void generateSyllabusRejectsModuleWithBlankTopicName() throws Exception {
                 stubAiOutput("{\"modules\":[]}");
 
                 List<SyllabusService.AiModule> modules = new ArrayList<>();
+                modules.add(validAiModule("Module 1"));
+                modules.add(validAiModule("Module 2"));
+                modules.add(validAiModule("Module 3"));
                 modules.add(new SyllabusService.AiModule(
-                                "Module 1", 3.0, List.of("Topic A", "Topic B", "Topic C")));
-                modules.add(new SyllabusService.AiModule(
-                                "Module 2", 3.0, List.of("Topic A", "Topic B", "Topic C")));
-                modules.add(new SyllabusService.AiModule(
-                                "Module 3", 3.0, List.of("Topic A", "Topic B", "Topic C")));
-                modules.add(new SyllabusService.AiModule(
-                                "Module 4", 3.0, List.of("Topic A", " ", "Topic C")));
+                                "Module 4",
+                                "Description for Module 4",
+                                3.0,
+                                List.of(
+                                                new SyllabusService.AiTopic("Topic A", "Description A"),
+                                                new SyllabusService.AiTopic(" ", "Description B"),
+                                                new SyllabusService.AiTopic("Topic C", "Description C"))));
 
                 when(objectMapper.readValue(
                                 anyString(),
@@ -660,6 +731,126 @@ class SyllabusServiceTest {
 
                 verify(syllabusRepository, never()).save(
                                 org.mockito.ArgumentMatchers.any(Syllabus.class));
+        }
+
+        @Test
+        void generateSyllabusRejectsMissingDescriptionsAndInvalidEstimatedHours() throws Exception {
+                List<SyllabusService.AiModule> modules = new ArrayList<>(validAiSyllabus().modules());
+                modules.set(3, new SyllabusService.AiModule(
+                                "Module 4",
+                                " ",
+                                3.0,
+                                List.of(
+                                                new SyllabusService.AiTopic("Topic A", "Description A"),
+                                                new SyllabusService.AiTopic("Topic B", "Description B"),
+                                                new SyllabusService.AiTopic("Topic C", "Description C"))));
+
+                stubAiOutput("{\"modules\":[]}");
+                when(objectMapper.readValue(
+                                anyString(),
+                                eq(SyllabusService.AiSyllabusResponse.class)))
+                                .thenReturn(new SyllabusService.AiSyllabusResponse(modules));
+
+                assertThrows(
+                                AiResponseParsingException.class,
+                                () -> syllabusService.generateSyllabus(validRequest()));
+
+                modules.set(3, new SyllabusService.AiModule(
+                                "Module 4",
+                                "Description for Module 4",
+                                Double.NaN,
+                                List.of(
+                                                new SyllabusService.AiTopic("Topic A", "Description A"),
+                                                new SyllabusService.AiTopic("Topic B", "Description B"),
+                                                new SyllabusService.AiTopic("Topic C", "Description C"))));
+                when(objectMapper.readValue(
+                                anyString(),
+                                eq(SyllabusService.AiSyllabusResponse.class)))
+                                .thenReturn(new SyllabusService.AiSyllabusResponse(modules));
+
+                assertThrows(
+                                AiResponseParsingException.class,
+                                () -> syllabusService.generateSyllabus(validRequest()));
+
+                verify(syllabusRepository, never()).save(
+                                org.mockito.ArgumentMatchers.any(Syllabus.class));
+        }
+
+        @Test
+        void generateSyllabusRejectsTopicWithoutDescriptionOrInvalidTopicCount() throws Exception {
+                stubAiOutput("{\"modules\":[]}");
+
+                List<SyllabusService.AiModule> modules = new ArrayList<>(validAiSyllabus().modules());
+                modules.set(3, new SyllabusService.AiModule(
+                                "Module 4",
+                                "Description for Module 4",
+                                3.0,
+                                List.of(
+                                                new SyllabusService.AiTopic("Topic A", "Description A"),
+                                                new SyllabusService.AiTopic("Topic B", " "),
+                                                new SyllabusService.AiTopic("Topic C", "Description C"))));
+                when(objectMapper.readValue(
+                                anyString(),
+                                eq(SyllabusService.AiSyllabusResponse.class)))
+                                .thenReturn(new SyllabusService.AiSyllabusResponse(modules));
+
+                assertThrows(
+                                AiResponseParsingException.class,
+                                () -> syllabusService.generateSyllabus(validRequest()));
+
+                modules.set(3, new SyllabusService.AiModule(
+                                "Module 4",
+                                "Description for Module 4",
+                                3.0,
+                                List.of(
+                                                new SyllabusService.AiTopic("Topic A", "Description A"),
+                                                new SyllabusService.AiTopic("Topic B", "Description B"))));
+                when(objectMapper.readValue(
+                                anyString(),
+                                eq(SyllabusService.AiSyllabusResponse.class)))
+                                .thenReturn(new SyllabusService.AiSyllabusResponse(modules));
+
+                assertThrows(
+                                AiResponseParsingException.class,
+                                () -> syllabusService.generateSyllabus(validRequest()));
+
+                verify(syllabusRepository, never()).save(
+                                org.mockito.ArgumentMatchers.any(Syllabus.class));
+        }
+
+        @Test
+        void generateSyllabusMapsModuleAndTopicDescriptions() throws Exception {
+                stubAiOutput("{\"modules\":[]}");
+                when(objectMapper.readValue(
+                                anyString(),
+                                eq(SyllabusService.AiSyllabusResponse.class)))
+                                .thenReturn(validAiSyllabus());
+                User user = User.builder()
+                                .id(10L)
+                                .email("generator@example.com")
+                                .password("test-password")
+                                .name("Generator User")
+                                .build();
+                when(userContext.getCurrentUser()).thenReturn(user);
+                when(syllabusRepository.save(org.mockito.ArgumentMatchers.any(Syllabus.class)))
+                                .thenAnswer(invocation -> invocation.getArgument(0));
+
+                var response = syllabusService.generateSyllabus(validRequest());
+
+                ArgumentCaptor<Syllabus> syllabusCaptor = ArgumentCaptor.forClass(Syllabus.class);
+                verify(syllabusRepository).save(syllabusCaptor.capture());
+                Syllabus savedSyllabus = syllabusCaptor.getValue();
+                assertEquals(user, savedSyllabus.getUser());
+                assertEquals("Java", savedSyllabus.getTopic());
+                assertEquals(4, savedSyllabus.getModules().size());
+
+                SyllabusModule firstModule = savedSyllabus.getModules().get(0);
+                assertEquals("Description for Module 1", firstModule.getDescription());
+                assertEquals(3, firstModule.getTopics().size());
+                assertEquals("Description for Topic A", firstModule.getTopics().get(0).getDescription());
+                assertEquals(60, firstModule.getTopics().get(0).getEstimatedMinutes());
+                assertEquals("Description for Module 1", response.modules().get(0).description());
+                assertEquals("Description for Topic A", response.modules().get(0).topics().get(0).description());
         }
 
         @Test
@@ -705,8 +896,12 @@ class SyllabusServiceTest {
         private SyllabusService.AiModule validAiModule(String title) {
                 return new SyllabusService.AiModule(
                                 title,
+                                "Description for " + title,
                                 3.0,
-                                List.of("Topic A", "Topic B", "Topic C"));
+                                List.of(
+                                                new SyllabusService.AiTopic("Topic A", "Description for Topic A"),
+                                                new SyllabusService.AiTopic("Topic B", "Description for Topic B"),
+                                                new SyllabusService.AiTopic("Topic C", "Description for Topic C")));
         }
 
         private SyllabusService.AiSyllabusResponse validAiSyllabus() {
