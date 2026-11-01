@@ -659,13 +659,45 @@ class SyllabusServiceTest {
         }
 
         @Test
+        void generateSyllabusRejectsMissingPathDescription() throws Exception {
+                stubAiOutput("{\"modules\":[]}");
+                when(objectMapper.readValue(
+                                anyString(),
+                                eq(SyllabusService.AiSyllabusResponse.class)))
+                                .thenReturn(new SyllabusService.AiSyllabusResponse(null, validAiSyllabus().modules()));
+
+                assertThrows(
+                                AiResponseParsingException.class,
+                                () -> syllabusService.generateSyllabus(validRequest()));
+
+                verify(syllabusRepository, never()).save(
+                                org.mockito.ArgumentMatchers.any(Syllabus.class));
+        }
+
+        @Test
+        void generateSyllabusRejectsBlankPathDescription() throws Exception {
+                stubAiOutput("{\"modules\":[]}");
+                when(objectMapper.readValue(
+                                anyString(),
+                                eq(SyllabusService.AiSyllabusResponse.class)))
+                                .thenReturn(new SyllabusService.AiSyllabusResponse("  \n ", validAiSyllabus().modules()));
+
+                assertThrows(
+                                AiResponseParsingException.class,
+                                () -> syllabusService.generateSyllabus(validRequest()));
+
+                verify(syllabusRepository, never()).save(
+                                org.mockito.ArgumentMatchers.any(Syllabus.class));
+        }
+
+        @Test
         void generateSyllabusRejectsTooFewModules() throws Exception {
                 stubAiOutput("{\"modules\":[]}");
 
                 when(objectMapper.readValue(
                                 anyString(),
                                 eq(SyllabusService.AiSyllabusResponse.class)))
-                                .thenReturn(new SyllabusService.AiSyllabusResponse(
+                                .thenReturn(validAiSyllabus(
                                                 List.of(
                                                                 validAiModule("Module 1"),
                                                                 validAiModule("Module 2"),
@@ -686,7 +718,7 @@ class SyllabusServiceTest {
                 when(objectMapper.readValue(
                                 anyString(),
                                 eq(SyllabusService.AiSyllabusResponse.class)))
-                                .thenReturn(new SyllabusService.AiSyllabusResponse(List.of(
+                                .thenReturn(validAiSyllabus(List.of(
                                                 validAiModule("Module 1"),
                                                 validAiModule("Module 2"),
                                                 validAiModule("Module 3"),
@@ -723,7 +755,7 @@ class SyllabusServiceTest {
                 when(objectMapper.readValue(
                                 anyString(),
                                 eq(SyllabusService.AiSyllabusResponse.class)))
-                                .thenReturn(new SyllabusService.AiSyllabusResponse(modules));
+                                .thenReturn(validAiSyllabus(modules));
 
                 assertThrows(
                                 AiResponseParsingException.class,
@@ -749,7 +781,7 @@ class SyllabusServiceTest {
                 when(objectMapper.readValue(
                                 anyString(),
                                 eq(SyllabusService.AiSyllabusResponse.class)))
-                                .thenReturn(new SyllabusService.AiSyllabusResponse(modules));
+                                .thenReturn(validAiSyllabus(modules));
 
                 assertThrows(
                                 AiResponseParsingException.class,
@@ -766,7 +798,7 @@ class SyllabusServiceTest {
                 when(objectMapper.readValue(
                                 anyString(),
                                 eq(SyllabusService.AiSyllabusResponse.class)))
-                                .thenReturn(new SyllabusService.AiSyllabusResponse(modules));
+                                .thenReturn(validAiSyllabus(modules));
 
                 assertThrows(
                                 AiResponseParsingException.class,
@@ -792,7 +824,7 @@ class SyllabusServiceTest {
                 when(objectMapper.readValue(
                                 anyString(),
                                 eq(SyllabusService.AiSyllabusResponse.class)))
-                                .thenReturn(new SyllabusService.AiSyllabusResponse(modules));
+                                .thenReturn(validAiSyllabus(modules));
 
                 assertThrows(
                                 AiResponseParsingException.class,
@@ -808,7 +840,7 @@ class SyllabusServiceTest {
                 when(objectMapper.readValue(
                                 anyString(),
                                 eq(SyllabusService.AiSyllabusResponse.class)))
-                                .thenReturn(new SyllabusService.AiSyllabusResponse(modules));
+                                .thenReturn(validAiSyllabus(modules));
 
                 assertThrows(
                                 AiResponseParsingException.class,
@@ -834,7 +866,7 @@ class SyllabusServiceTest {
                 when(objectMapper.readValue(
                                 anyString(),
                                 eq(SyllabusService.AiSyllabusResponse.class)))
-                                .thenReturn(new SyllabusService.AiSyllabusResponse(modules));
+                                .thenReturn(validAiSyllabus(modules));
 
                 assertThrows(
                                 AiResponseParsingException.class,
@@ -851,7 +883,7 @@ class SyllabusServiceTest {
                 when(objectMapper.readValue(
                                 anyString(),
                                 eq(SyllabusService.AiSyllabusResponse.class)))
-                                .thenReturn(new SyllabusService.AiSyllabusResponse(modules));
+                                .thenReturn(validAiSyllabus(modules));
 
                 assertThrows(
                                 AiResponseParsingException.class,
@@ -867,7 +899,7 @@ class SyllabusServiceTest {
                 when(objectMapper.readValue(
                                 anyString(),
                                 eq(SyllabusService.AiSyllabusResponse.class)))
-                                .thenReturn(validAiSyllabus());
+                                .thenReturn(validAiSyllabus("  A focused Java learning path.  "));
                 User user = User.builder()
                                 .id(10L)
                                 .email("generator@example.com")
@@ -885,6 +917,7 @@ class SyllabusServiceTest {
                 Syllabus savedSyllabus = syllabusCaptor.getValue();
                 assertEquals(user, savedSyllabus.getUser());
                 assertEquals("Java", savedSyllabus.getTopic());
+                assertEquals("A focused Java learning path.", savedSyllabus.getDescription());
                 assertEquals(4, savedSyllabus.getModules().size());
 
                 SyllabusModule firstModule = savedSyllabus.getModules().get(0);
@@ -894,6 +927,7 @@ class SyllabusServiceTest {
                 assertEquals(60, firstModule.getTopics().get(0).getEstimatedMinutes());
                 assertEquals(45, firstModule.getTopics().get(1).getEstimatedMinutes());
                 assertEquals(30, firstModule.getTopics().get(2).getEstimatedMinutes());
+                assertEquals("A focused Java learning path.", response.description());
                 assertEquals("Description for Module 1", response.modules().get(0).description());
                 assertEquals("Description for Topic A", response.modules().get(0).topics().get(0).description());
                 assertEquals(60, response.modules().get(0).topics().get(0).estimatedMinutes());
@@ -922,7 +956,8 @@ class SyllabusServiceTest {
                 verify(chatClient.prompt().system(anyString()))
                                 .user(org.mockito.ArgumentMatchers.<String>argThat(prompt ->
                                                 prompt.contains("\"estimatedMinutes\"")
-                                                                && prompt.contains("positive integer")));
+                                                                && prompt.contains("positive integer")
+                                                                && prompt.contains("top-level \"description\"")));
         }
 
         @Test
@@ -977,11 +1012,25 @@ class SyllabusServiceTest {
         }
 
         private SyllabusService.AiSyllabusResponse validAiSyllabus() {
-                return new SyllabusService.AiSyllabusResponse(List.of(
+                return validAiSyllabus("A detailed learning path covering the requested skills.");
+        }
+
+        private SyllabusService.AiSyllabusResponse validAiSyllabus(String description) {
+                return validAiSyllabus(description, List.of(
                                 validAiModule("Module 1"),
                                 validAiModule("Module 2"),
                                 validAiModule("Module 3"),
                                 validAiModule("Module 4")));
+        }
+
+        private SyllabusService.AiSyllabusResponse validAiSyllabus(List<SyllabusService.AiModule> modules) {
+                return validAiSyllabus("A detailed learning path covering the requested skills.", modules);
+        }
+
+        private SyllabusService.AiSyllabusResponse validAiSyllabus(
+                        String description,
+                        List<SyllabusService.AiModule> modules) {
+                return new SyllabusService.AiSyllabusResponse(description, modules);
         }
 
 }
