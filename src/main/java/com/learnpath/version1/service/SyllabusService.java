@@ -311,7 +311,10 @@ public class SyllabusService {
                         completedTopics += pathCompletedTopics;
 
                         String status;
-                        if (pathTotalTopics > 0 && pathCompletedTopics == pathTotalTopics) {
+                        if (pathTotalTopics > 0
+                                        && pathCompletedTopics == pathTotalTopics
+                                        && pathTotalModules > 0
+                                        && pathCompletedModules == pathTotalModules) {
                                 status = "COMPLETED";
                         } else if (pathCompletedTopics == 0) {
                                 status = "NOT_STARTED";

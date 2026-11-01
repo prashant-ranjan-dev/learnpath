@@ -2,6 +2,7 @@
 package com.learnpath.version1.service;
 
 import com.learnpath.version1.dto.DashboardResponse;
+import com.learnpath.version1.entities.Quiz;
 import com.learnpath.version1.entities.QuizAttempt;
 import com.learnpath.version1.entities.Syllabus;
 import com.learnpath.version1.entities.SyllabusModule;
@@ -25,6 +26,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -351,6 +353,234 @@ class SyllabusServiceTest {
                 assertEquals(4.0, summary.estimatedHours());
                 assertEquals("IN_PROGRESS", summary.status());
                 assertEquals(lastActiveAt, summary.lastActiveAt());
+        }
+
+        @Test
+        void getDashboardSummaryOrdersTopicAndQuizActivityNewestFirst() {
+                User user = User.builder()
+                                .id(6L)
+                                .email("ordered-activity@example.com")
+                                .password("test-password")
+                                .name("Ordered Activity User")
+                                .build();
+
+                LocalDateTime topicCompletedAt = LocalDateTime.of(2026, 10, 31, 14, 0);
+                LocalDateTime quizSubmittedAt = LocalDateTime.of(2026, 10, 31, 15, 0);
+
+                Topic completedTopic = Topic.builder()
+                                .id(601L)
+                                .name("Java Variables")
+                                .completed(true)
+                                .completedAt(topicCompletedAt)
+                                .build();
+
+                SyllabusModule module = SyllabusModule.builder()
+                                .id(60L)
+                                .title("Java Fundamentals")
+                                .topics(new ArrayList<>(List.of(completedTopic)))
+                                .build();
+
+                Syllabus syllabus = Syllabus.builder()
+                                .id(600L)
+                                .topic("Java")
+                                .user(user)
+                                .modules(new ArrayList<>(List.of(module)))
+                                .build();
+                module.setSyllabus(syllabus);
+
+                Quiz quiz = Quiz.builder()
+                                .id(602L)
+                                .title("Java Fundamentals Quiz")
+                                .module(module)
+                                .build();
+
+                QuizAttempt attempt = QuizAttempt.builder()
+                                .id(603L)
+                                .quiz(quiz)
+                                .passed(true)
+                                .score(1)
+                                .totalQuestions(1)
+                                .userAnswersJson("[0]")
+                                .submittedAt(quizSubmittedAt)
+                                .build();
+
+                when(syllabusRepository.findByUserOrderByCreatedAtDesc(user))
+                                .thenReturn(List.of(syllabus));
+                when(quizRepository.findByModuleId(60L))
+                                .thenReturn(Optional.of(quiz));
+                when(quizAttemptRepository.existsByQuizIdAndUserIdAndPassedTrue(602L, 6L))
+                                .thenReturn(true);
+                when(quizAttemptRepository
+                                .findByUserIdAndUserAnswersJsonIsNotNullOrderByAttemptedAtDesc(6L))
+                                .thenReturn(List.of(attempt));
+
+                DashboardResponse response = syllabusService.getDashboardSummary(user);
+
+                assertEquals(2, response.recentActivity().size());
+                assertEquals("QUIZ_SUBMITTED", response.recentActivity().get(0).type());
+                assertEquals(quizSubmittedAt, response.recentActivity().get(0).occurredAt());
+                assertEquals("TOPIC_COMPLETED", response.recentActivity().get(1).type());
+                assertEquals(topicCompletedAt, response.recentActivity().get(1).occurredAt());
+        }
+
+        @Test
+        void getDashboardSummaryReturnsAtMostTenRecentActivityEvents() {
+                User user = User.builder()
+                                .id(7L)
+                                .email("many-events@example.com")
+                                .password("test-password")
+                                .name("Many Events User")
+                                .build();
+
+                List<Topic> topics = new ArrayList<>();
+                for (long index = 0; index < 11; index++) {
+                        topics.add(Topic.builder()
+                                        .id(700L + index)
+                                        .name("Topic " + index)
+                                        .completed(true)
+                                        .completedAt(LocalDateTime.of(2026, 10, 31, (int) index, 0))
+                                        .build());
+                }
+
+                SyllabusModule module = SyllabusModule.builder()
+                                .id(70L)
+                                .title("Java Fundamentals")
+                                .topics(topics)
+                                .build();
+
+                Syllabus syllabus = Syllabus.builder()
+                                .id(700L)
+                                .topic("Java")
+                                .user(user)
+                                .modules(new ArrayList<>(List.of(module)))
+                                .build();
+
+                when(syllabusRepository.findByUserOrderByCreatedAtDesc(user))
+                                .thenReturn(List.of(syllabus));
+                when(quizRepository.findByModuleId(70L))
+                                .thenReturn(Optional.empty());
+                when(quizAttemptRepository
+                                .findByUserIdAndUserAnswersJsonIsNotNullOrderByAttemptedAtDesc(7L))
+                                .thenReturn(List.of());
+
+                DashboardResponse response = syllabusService.getDashboardSummary(user);
+
+                assertEquals(10, response.recentActivity().size());
+        }
+
+        @Test
+        void getDashboardSummaryDoesNotCompletePathWhenModuleQuizIsUnpassed() {
+                User user = User.builder()
+                                .id(8L)
+                                .email("unpassed-quiz@example.com")
+                                .password("test-password")
+                                .name("Unpassed Quiz User")
+                                .build();
+
+                LocalDateTime quizSubmittedAt = LocalDateTime.of(2026, 10, 31, 15, 0);
+                Topic completedTopic = Topic.builder()
+                                .id(801L)
+                                .name("Java Variables")
+                                .completed(true)
+                                .build();
+
+                SyllabusModule module = SyllabusModule.builder()
+                                .id(80L)
+                                .title("Java Fundamentals")
+                                .topics(new ArrayList<>(List.of(completedTopic)))
+                                .build();
+
+                Syllabus syllabus = Syllabus.builder()
+                                .id(800L)
+                                .topic("Java")
+                                .user(user)
+                                .modules(new ArrayList<>(List.of(module)))
+                                .build();
+                module.setSyllabus(syllabus);
+
+                Quiz quiz = Quiz.builder()
+                                .id(802L)
+                                .title("Java Fundamentals Quiz")
+                                .module(module)
+                                .build();
+                QuizAttempt failedAttempt = QuizAttempt.builder()
+                                .id(803L)
+                                .quiz(quiz)
+                                .passed(false)
+                                .score(0)
+                                .totalQuestions(1)
+                                .userAnswersJson("[1]")
+                                .submittedAt(quizSubmittedAt)
+                                .build();
+
+                when(syllabusRepository.findByUserOrderByCreatedAtDesc(user))
+                                .thenReturn(List.of(syllabus));
+                when(quizRepository.findByModuleId(80L))
+                                .thenReturn(Optional.of(quiz));
+                when(quizAttemptRepository.existsByQuizIdAndUserIdAndPassedTrue(802L, 8L))
+                                .thenReturn(false);
+                when(quizAttemptRepository
+                                .findByUserIdAndUserAnswersJsonIsNotNullOrderByAttemptedAtDesc(8L))
+                                .thenReturn(List.of(failedAttempt));
+
+                DashboardResponse response = syllabusService.getDashboardSummary(user);
+
+                assertEquals("IN_PROGRESS", response.recentLearningPaths().get(0).status());
+                assertEquals(0, response.completedModules());
+        }
+
+        @Test
+        void getDashboardSummaryReturnsNullContinueLearningWhenNoPathHasNextTopic() {
+                User user = User.builder()
+                                .id(9L)
+                                .email("no-next-topic@example.com")
+                                .password("test-password")
+                                .name("No Next Topic User")
+                                .build();
+
+                Syllabus firstSyllabus = Syllabus.builder()
+                                .id(900L)
+                                .topic("Java")
+                                .user(user)
+                                .modules(new ArrayList<>(List.of(SyllabusModule.builder()
+                                                .id(90L)
+                                                .title("Java Fundamentals")
+                                                .topics(new ArrayList<>(List.of(Topic.builder()
+                                                                .id(901L)
+                                                                .name("Java Variables")
+                                                                .completed(true)
+                                                                .build())))
+                                                .build())))
+                                .build();
+
+                Syllabus secondSyllabus = Syllabus.builder()
+                                .id(910L)
+                                .topic("Python")
+                                .user(user)
+                                .modules(new ArrayList<>(List.of(SyllabusModule.builder()
+                                                .id(91L)
+                                                .title("Python Fundamentals")
+                                                .topics(new ArrayList<>(List.of(Topic.builder()
+                                                                .id(911L)
+                                                                .name("Python Variables")
+                                                                .completed(true)
+                                                                .build())))
+                                                .build())))
+                                .build();
+
+                when(syllabusRepository.findByUserOrderByCreatedAtDesc(user))
+                                .thenReturn(List.of(firstSyllabus, secondSyllabus));
+                when(quizRepository.findByModuleId(90L))
+                                .thenReturn(Optional.empty());
+                when(quizRepository.findByModuleId(91L))
+                                .thenReturn(Optional.empty());
+                when(quizAttemptRepository
+                                .findByUserIdAndUserAnswersJsonIsNotNullOrderByAttemptedAtDesc(9L))
+                                .thenReturn(List.of());
+
+                DashboardResponse response = syllabusService.getDashboardSummary(user);
+
+                assertNull(response.continueLearning());
         }
 
 }
