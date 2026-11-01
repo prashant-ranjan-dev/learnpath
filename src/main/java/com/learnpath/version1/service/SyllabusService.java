@@ -259,7 +259,8 @@ public class SyllabusService {
                                                                 technologies, concepts, or skills covered across the modules. Make it
                                                                 specific to the requested topic, current understanding, desired depth,
                                                                 and goal. Do not use generic wording such as "A learning path for...".
-                                                                Return ONLY a valid JSON object with a single key "modules", like:
+                                                                Return ONLY a valid JSON object with exactly two top-level fields,
+                                                                "description" and "modules", following this example:
                                                                                 {
                                                                                         "description": "Build Java backend applications by learning core Java, object-oriented design, collections, Spring Boot, REST APIs, Hibernate, and PostgreSQL.",
                                                                                         "modules": [
