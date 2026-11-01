@@ -35,7 +35,14 @@ public class SyllabusService {
         record AiSyllabusResponse(List<AiModule> modules) {
         }
 
-        record AiModule(String title, double estimatedHours, List<String> topics) {
+        record AiModule(
+                        String title,
+                        String description,
+                        double estimatedHours,
+                        List<AiTopic> topics) {
+        }
+
+        record AiTopic(String name, String description) {
         }
 
         private final ChatClient chatClient;
@@ -112,9 +119,11 @@ public class SyllabusService {
                 for (AiModule module : response.modules()) {
                         if (module == null
                                         || module.title() == null
-                                        || module.title().isBlank()) {
+                                        || module.title().isBlank()
+                                        || module.description() == null
+                                        || module.description().isBlank()) {
                                 throw new AiResponseParsingException(
-                                                "Each AI-generated module must have a title.",
+                                                "Each AI-generated module must have a title and description.",
                                                 null);
                         }
 
@@ -133,10 +142,14 @@ public class SyllabusService {
                                                 null);
                         }
 
-                        for (String topic : module.topics()) {
-                                if (topic == null || topic.isBlank()) {
+                        for (AiTopic topic : module.topics()) {
+                                if (topic == null
+                                                || topic.name() == null
+                                                || topic.name().isBlank()
+                                                || topic.description() == null
+                                                || topic.description().isBlank()) {
                                         throw new AiResponseParsingException(
-                                                        "AI-generated topic names must not be blank.",
+                                                        "Each AI-generated topic must have a name and description.",
                                                         null);
                                 }
                         }
@@ -195,7 +208,7 @@ public class SyllabusService {
                                         .title(aiMod.title())
                                         .estimatedHours((float) aiMod.estimatedHours())
                                         .syllabus(syllabus)
-                                        .description(aiMod.title())
+                                        .description(aiMod.description())
                                         .topics(new ArrayList<>())
                                         .build();
 
@@ -204,10 +217,10 @@ public class SyllabusService {
                                         1,
                                         (int) Math.ceil(aiMod.estimatedHours() * 60.0 / topicCount));
 
-                        for (String topicName : aiMod.topics()) {
+                        for (AiTopic aiTopic : aiMod.topics()) {
                                 Topic topic = Topic.builder()
-                                                .name(topicName)
-                                                .description(topicName)
+                                                .name(aiTopic.name())
+                                                .description(aiTopic.description())
                                                 .estimatedMinutes(estimatedMinutes)
                                                 .completed(false)
                                                 .syllabusModule(mod)
@@ -226,28 +239,45 @@ public class SyllabusService {
 
         private String buildPrompt(SyllabusRequest request) {
                 return """
-                                            Topic: %s
-                                            Current understanding: %s
-                                            Desired depth: %s
-                                            Goal: %s
+                                                                            Topic: %s
+                                                                            Current understanding: %s
+                                                                            Desired depth: %s
+                                                                            Goal: %s
 
-                                            Produce exactly 4-6 modules. Each module must have:
-                                            - "title": a descriptive module title
-                                            - "topics": a list of 3-5 specific topics (strings)
-                                            - "estimatedHours": a number (e.g. 3.5) representing estimated hours
+                                                                            Produce exactly 4-6 modules. Each module must have:
+                                - "title": a descriptive module title
+                                - "description": 1-2 sentences explaining what the learner will understand or be able to do after this module
+                                - "topics": a list of 3-5 topic objects, each containing:
+                                  - "name": a specific topic name
+                                  - "description": 1 concise sentence explaining what the topic covers
+                                - "estimatedHours": a number (e.g. 3.5) representing estimated hours
 
-                                            Return ONLY a valid JSON object with a single key "modules", like:
-                                            {
-                                              "modules": [
-                                                {
-                                                  "title": "Module Title",
-                                                  "topics": ["Topic 1", "Topic 2", "Topic 3"],
-                                                  "estimatedHours": 5.5
-                                                }
-                                              ]
-                                            }
-                                """.formatted(request.topic(), request.currentUnderstanding(), request.depthLevel(),
-                                request.goal());
+                                Return ONLY a valid JSON object with a single key "modules", like:
+                                {
+                                  "modules": [
+                                    {
+                                      "title": "Java Fundamentals",
+                                      "description": "Learn Java syntax and core programming constructs to build a foundation for object-oriented programming.",
+                                      "topics": [
+                                        {
+                                          "name": "Variables and Data Types",
+                                          "description": "Understand primitive types, reference types, declarations, and type conversion."
+                                        },
+                                        {
+                                          "name": "Control Flow",
+                                          "description": "Use conditional statements and loops to control program execution."
+                                        },
+                                        {
+                                          "name": "Methods",
+                                          "description": "Organize reusable logic into methods with parameters and return values."
+                                        }
+                                      ],
+                                      "estimatedHours": 5.5
+                                    }
+                                  ]
+                                }"""
+                                .formatted(request.topic(), request.currentUnderstanding(), request.depthLevel(),
+                                                request.goal());
 
         }
 
