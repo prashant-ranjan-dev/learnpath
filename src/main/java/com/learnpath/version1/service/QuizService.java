@@ -357,6 +357,12 @@ public class QuizService {
         attempt.setTimeTakenSeconds(timeTakenSeconds);
         attempt.setUserAnswersJson(
                 objectMapper.valueToTree(orderedAnswers).toString());
+        
+
+        // Update the parent learning path's last-active timestamp.
+        quiz.getModule()
+                .getSyllabus()
+                .setUpdatedAt(submittedAt);
 
         attemptRepository.save(attempt);
 
