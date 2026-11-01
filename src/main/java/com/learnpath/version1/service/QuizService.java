@@ -647,8 +647,25 @@ public class QuizService {
                                                 "Stored weakness analysis contains a null result.");
                         }
 
+                        List<WeakTopic> normalizedTopics = weakTopics.stream()
+                                        .map(topic -> {
+                                                if (topic == null || isBlank(topic.severity())) {
+                                                        throw new IllegalStateException(
+                                                                        "Stored weakness analysis contains an invalid topic.");
+                                                }
+
+                                                return new WeakTopic(
+                                                                topic.topicName(),
+                                                                topic.reason(),
+                                                                topic.suggestion(),
+                                                                topic.severity().trim()
+                                                                                .toUpperCase(java.util.Locale.ROOT),
+                                                                topic.example());
+                                        })
+                                        .toList();
+
                         return new WeaknessAnalysisResponse(
-                                        weakTopics,
+                                        normalizedTopics,
                                         analysis.getGeneratedAt());
                 } catch (Exception e) {
                         throw new IllegalStateException(
