@@ -475,7 +475,9 @@ public class QuizService {
                 }
 
                 if (wrongQuestionsInfo.isEmpty()) {
-                        return new WeaknessAnalysisResponse(List.of());
+                        return new WeaknessAnalysisResponse(
+                                        List.of(),
+                                        LocalDateTime.now());
                 }
 
                 List<Topic> topics = quiz.getModule().getTopics();
@@ -502,31 +504,32 @@ public class QuizService {
                 }
 
                 String prompt = """
-                                You are an expert educational analyst.
-
-                                Questions answered incorrectly:
-                                %s
-
-                                Learning content:
-                                %s
-
-                                Identify the weak topics or concepts the learner should review.
+                                                                Identify the weak topics or concepts the learner should review.
                                 For each entry provide:
                                 - topicName: short title of the weak concept
                                 - reason: why the learner struggled
                                 - suggestion: a specific action to improve
+                                - severity: exactly one of "HIGH", "MEDIUM", or "LOW"
+                                - example: a short example, practice question, or concrete illustration
+                                  that helps the learner understand the weak concept
+
+                                Choose severity based on how fundamental the concept is and how
+                                strongly the incorrect answers indicate a learning gap.
 
                                 Return ONLY a JSON array:
                                 [
                                   {
-                                    "topicName": "...",
-                                    "reason": "...",
-                                    "suggestion": "..."
+                                    "topicName": "Example topic",
+                                    "reason": "The learner confused two related concepts.",
+                                    "suggestion": "Review the distinction and solve practice questions.",
+                                    "severity": "MEDIUM",
+                                    "example": "Compare the two concepts using a simple example."
                                   }
                                 ]
 
                                 Do not include Markdown fences or extra text.
-                                """.formatted(wrongQuestionsInfo, topicsContent);
+                                                                """
+                                .formatted(wrongQuestionsInfo, topicsContent);
 
                 String aiOutput = chatClient.prompt()
                                 .system(
@@ -558,13 +561,20 @@ public class QuizService {
                                                 || topic.reason() == null
                                                 || topic.reason().isBlank()
                                                 || topic.suggestion() == null
-                                                || topic.suggestion().isBlank()) {
+                                                || topic.suggestion().isBlank()
+                                                || topic.example() == null
+                                                || topic.example().isBlank()
+                                                || topic.severity() == null
+                                                || !List.of("HIGH", "MEDIUM", "LOW")
+                                                                .contains(topic.severity().trim().toUpperCase())) {
                                         throw new IllegalArgumentException(
-                                                        "AI returned an incomplete weakness analysis entry.");
+                                                        "AI returned an incomplete or invalid weakness analysis entry.");
                                 }
                         }
 
-                        return new WeaknessAnalysisResponse(weakTopics);
+                        return new WeaknessAnalysisResponse(
+                                        weakTopics,
+                                        LocalDateTime.now());
                 } catch (Exception e) {
                         throw new IllegalStateException(
                                         "Failed to parse or validate weakness analysis JSON.", e);
