@@ -47,7 +47,7 @@ public class AuthController {
         }
 
         @PostMapping("/signup")
-        public ResponseEntity<Map<String, String>> signup(
+        public ResponseEntity<?> signup(
                         @Valid @RequestBody SignupRequest request) {
 
                 try {
@@ -64,7 +64,13 @@ public class AuthController {
 
                         String token = jwtUtil.generateToken(userDetails);
 
-                        return ResponseEntity.ok(Map.of("token", token));
+                        return ResponseEntity.status(HttpStatus.CREATED)
+                                        .body(new SignupResponse(
+                                                        token,
+                                                        new UserIdentity(
+                                                                        user.getId(),
+                                                                        user.getName(),
+                                                                        user.getEmail())));
 
                 } catch (EmailAlreadyRegisteredException exception) {
                         return ResponseEntity.badRequest()
@@ -74,7 +80,7 @@ public class AuthController {
 
         @PostMapping("/login")
         public ResponseEntity<Map<String, String>> login(
-                @Valid @RequestBody LoginRequest request) {
+                        @Valid @RequestBody LoginRequest request) {
 
                 try {
                         Authentication authentication = authenticationManager.authenticate(
@@ -94,6 +100,17 @@ public class AuthController {
                                                         "error", "Unauthorized",
                                                         "message", "Invalid email or password"));
                 }
+        }
+
+        public record SignupResponse(
+                        String token,
+                        UserIdentity user) {
+        }
+
+        public record UserIdentity(
+                        Long id,
+                        String name,
+                        String email) {
         }
 
         public record SignupRequest(
