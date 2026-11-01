@@ -42,18 +42,19 @@ public class ContentService {
      * learning workflow and returns its parent syllabus.
      */
     private Syllabus validateTopicRelationships(Topic topic) {
-        SyllabusModule module = topic.getSyllabusModule();
-
-        if (module == null || module.getSyllabus() == null) {
+        if (topic == null
+                || topic.getSyllabusModule() == null
+                || topic.getSyllabusModule().getSyllabus() == null) {
             throw new IllegalStateException(
                     "This topic is not associated with a valid learning path.");
         }
 
-        return module.getSyllabus();
+        return topic.getSyllabusModule().getSyllabus();
     }
 
     private void verifyOwnership(Syllabus syllabus, Long userId) {
-        if (userId == null
+        if (syllabus == null
+                || userId == null
                 || syllabus.getUser() == null
                 || syllabus.getUser().getId() == null
                 || !syllabus.getUser().getId().equals(userId)) {
@@ -72,9 +73,11 @@ public class ContentService {
 
         List<SyllabusModule> modules = syllabus.getModules();
 
-        if (modules == null || modules.isEmpty() || module.getId() == null) {
+        if (module == null
+                || module.getSyllabus() == null
+                || module.getId() == null) {
             throw new IllegalStateException(
-                    "The learning path has no valid module sequence.");
+                    "This module is not associated with a valid learning path.");
         }
 
         int currentIndex = -1;
