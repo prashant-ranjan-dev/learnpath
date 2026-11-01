@@ -1,6 +1,7 @@
 
 package com.learnpath.version1.service;
 
+import com.learnpath.version1.dto.SyllabusRequest;
 import com.learnpath.version1.dto.DashboardResponse;
 import com.learnpath.version1.entities.Quiz;
 import com.learnpath.version1.entities.QuizAttempt;
@@ -12,10 +13,12 @@ import com.learnpath.version1.repositories.QuizAttemptRepository;
 import com.learnpath.version1.repositories.QuizRepository;
 import com.learnpath.version1.repositories.SyllabusRepository;
 import com.learnpath.version1.utility.UserContext;
+import com.learnpath.version1.exception.AiResponseParsingException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.Answers;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.ai.chat.client.ChatClient;
 import tools.jackson.databind.ObjectMapper;
@@ -27,6 +30,10 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -36,7 +43,7 @@ class SyllabusServiceTest {
         @Mock
         private ChatClient.Builder chatClientBuilder;
 
-        @Mock
+        @Mock(answer = Answers.RETURNS_DEEP_STUBS)
         private ChatClient chatClient;
 
         @Mock
@@ -581,6 +588,133 @@ class SyllabusServiceTest {
                 DashboardResponse response = syllabusService.getDashboardSummary(user);
 
                 assertNull(response.continueLearning());
+        }
+
+        @Test
+        void generateSyllabusRejectsNullAiResponse() {
+                stubAiOutput(null);
+
+                assertThrows(
+                                AiResponseParsingException.class,
+                                () -> syllabusService.generateSyllabus(validRequest()));
+
+                verify(syllabusRepository, never()).save(
+                                org.mockito.ArgumentMatchers.any(Syllabus.class));
+        }
+
+        @Test
+        void generateSyllabusRejectsBlankAiResponse() {
+                stubAiOutput("   \n  ");
+
+                assertThrows(
+                                AiResponseParsingException.class,
+                                () -> syllabusService.generateSyllabus(validRequest()));
+
+                verify(syllabusRepository, never()).save(
+                                org.mockito.ArgumentMatchers.any(Syllabus.class));
+        }
+
+        @Test
+        void generateSyllabusRejectsTooFewModules() throws Exception {
+                stubAiOutput("{\"modules\":[]}");
+
+                when(objectMapper.readValue(
+                                anyString(),
+                                eq(SyllabusService.AiSyllabusResponse.class)))
+                                .thenReturn(new SyllabusService.AiSyllabusResponse(
+                                                List.of(
+                                                                validAiModule("Module 1"),
+                                                                validAiModule("Module 2"),
+                                                                validAiModule("Module 3"))));
+
+                assertThrows(
+                                AiResponseParsingException.class,
+                                () -> syllabusService.generateSyllabus(validRequest()));
+
+                verify(syllabusRepository, never()).save(
+                                org.mockito.ArgumentMatchers.any(Syllabus.class));
+        }
+
+        @Test
+        void generateSyllabusRejectsModuleWithBlankTopicName() throws Exception {
+                stubAiOutput("{\"modules\":[]}");
+
+                List<SyllabusService.AiModule> modules = new ArrayList<>();
+                modules.add(new SyllabusService.AiModule(
+                                "Module 1", 3.0, List.of("Topic A", "Topic B", "Topic C")));
+                modules.add(new SyllabusService.AiModule(
+                                "Module 2", 3.0, List.of("Topic A", "Topic B", "Topic C")));
+                modules.add(new SyllabusService.AiModule(
+                                "Module 3", 3.0, List.of("Topic A", "Topic B", "Topic C")));
+                modules.add(new SyllabusService.AiModule(
+                                "Module 4", 3.0, List.of("Topic A", " ", "Topic C")));
+
+                when(objectMapper.readValue(
+                                anyString(),
+                                eq(SyllabusService.AiSyllabusResponse.class)))
+                                .thenReturn(new SyllabusService.AiSyllabusResponse(modules));
+
+                assertThrows(
+                                AiResponseParsingException.class,
+                                () -> syllabusService.generateSyllabus(validRequest()));
+
+                verify(syllabusRepository, never()).save(
+                                org.mockito.ArgumentMatchers.any(Syllabus.class));
+        }
+
+        @Test
+        void generateSyllabusRejectsInvalidDepthLevel() throws Exception {
+                stubAiOutput("{\"modules\":[]}");
+
+                when(objectMapper.readValue(
+                                anyString(),
+                                eq(SyllabusService.AiSyllabusResponse.class)))
+                                .thenReturn(validAiSyllabus());
+
+                SyllabusRequest request = new SyllabusRequest(
+                                "Java",
+                                "Beginner",
+                                "InvalidDepth",
+                                "Prepare for interviews");
+
+                assertThrows(
+                                IllegalArgumentException.class,
+                                () -> syllabusService.generateSyllabus(request));
+
+                verify(syllabusRepository, never()).save(
+                                org.mockito.ArgumentMatchers.any(Syllabus.class));
+        }
+
+        private void stubAiOutput(String output) {
+                when(chatClient.prompt()
+                                .system(anyString())
+                                .user(anyString())
+                                .call()
+                                .content())
+                                .thenReturn(output);
+        }
+
+        private SyllabusRequest validRequest() {
+                return new SyllabusRequest(
+                                "Java",
+                                "Beginner",
+                                "Foundations",
+                                "Prepare for interviews");
+        }
+
+        private SyllabusService.AiModule validAiModule(String title) {
+                return new SyllabusService.AiModule(
+                                title,
+                                3.0,
+                                List.of("Topic A", "Topic B", "Topic C"));
+        }
+
+        private SyllabusService.AiSyllabusResponse validAiSyllabus() {
+                return new SyllabusService.AiSyllabusResponse(List.of(
+                                validAiModule("Module 1"),
+                                validAiModule("Module 2"),
+                                validAiModule("Module 3"),
+                                validAiModule("Module 4")));
         }
 
 }
