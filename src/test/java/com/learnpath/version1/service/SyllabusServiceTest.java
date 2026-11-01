@@ -716,9 +716,9 @@ class SyllabusServiceTest {
                                 "Description for Module 4",
                                 3.0,
                                 List.of(
-                                                new SyllabusService.AiTopic("Topic A", "Description A"),
-                                                new SyllabusService.AiTopic(" ", "Description B"),
-                                                new SyllabusService.AiTopic("Topic C", "Description C"))));
+                                                new SyllabusService.AiTopic("Topic A", "Description A", 60),
+                                                new SyllabusService.AiTopic(" ", "Description B", 45),
+                                                new SyllabusService.AiTopic("Topic C", "Description C", 30))));
 
                 when(objectMapper.readValue(
                                 anyString(),
@@ -741,9 +741,9 @@ class SyllabusServiceTest {
                                 " ",
                                 3.0,
                                 List.of(
-                                                new SyllabusService.AiTopic("Topic A", "Description A"),
-                                                new SyllabusService.AiTopic("Topic B", "Description B"),
-                                                new SyllabusService.AiTopic("Topic C", "Description C"))));
+                                                new SyllabusService.AiTopic("Topic A", "Description A", 60),
+                                                new SyllabusService.AiTopic("Topic B", "Description B", 45),
+                                                new SyllabusService.AiTopic("Topic C", "Description C", 30))));
 
                 stubAiOutput("{\"modules\":[]}");
                 when(objectMapper.readValue(
@@ -760,9 +760,9 @@ class SyllabusServiceTest {
                                 "Description for Module 4",
                                 Double.NaN,
                                 List.of(
-                                                new SyllabusService.AiTopic("Topic A", "Description A"),
-                                                new SyllabusService.AiTopic("Topic B", "Description B"),
-                                                new SyllabusService.AiTopic("Topic C", "Description C"))));
+                                                new SyllabusService.AiTopic("Topic A", "Description A", 60),
+                                                new SyllabusService.AiTopic("Topic B", "Description B", 45),
+                                                new SyllabusService.AiTopic("Topic C", "Description C", 30))));
                 when(objectMapper.readValue(
                                 anyString(),
                                 eq(SyllabusService.AiSyllabusResponse.class)))
@@ -786,9 +786,9 @@ class SyllabusServiceTest {
                                 "Description for Module 4",
                                 3.0,
                                 List.of(
-                                                new SyllabusService.AiTopic("Topic A", "Description A"),
-                                                new SyllabusService.AiTopic("Topic B", " "),
-                                                new SyllabusService.AiTopic("Topic C", "Description C"))));
+                                                new SyllabusService.AiTopic("Topic A", "Description A", 60),
+                                                new SyllabusService.AiTopic("Topic B", " ", 45),
+                                                new SyllabusService.AiTopic("Topic C", "Description C", 30))));
                 when(objectMapper.readValue(
                                 anyString(),
                                 eq(SyllabusService.AiSyllabusResponse.class)))
@@ -803,8 +803,51 @@ class SyllabusServiceTest {
                                 "Description for Module 4",
                                 3.0,
                                 List.of(
-                                                new SyllabusService.AiTopic("Topic A", "Description A"),
-                                                new SyllabusService.AiTopic("Topic B", "Description B"))));
+                                                new SyllabusService.AiTopic("Topic A", "Description A", 60),
+                                                new SyllabusService.AiTopic("Topic B", "Description B", 45))));
+                when(objectMapper.readValue(
+                                anyString(),
+                                eq(SyllabusService.AiSyllabusResponse.class)))
+                                .thenReturn(new SyllabusService.AiSyllabusResponse(modules));
+
+                assertThrows(
+                                AiResponseParsingException.class,
+                                () -> syllabusService.generateSyllabus(validRequest()));
+
+                verify(syllabusRepository, never()).save(
+                                org.mockito.ArgumentMatchers.any(Syllabus.class));
+        }
+
+        @Test
+        void generateSyllabusRejectsTopicWithNonPositiveEstimatedMinutes() throws Exception {
+                stubAiOutput("{\"modules\":[]}");
+
+                List<SyllabusService.AiModule> modules = new ArrayList<>(validAiSyllabus().modules());
+                modules.set(3, new SyllabusService.AiModule(
+                                "Module 4",
+                                "Description for Module 4",
+                                3.0,
+                                List.of(
+                                                new SyllabusService.AiTopic("Topic A", "Description A", 60),
+                                                new SyllabusService.AiTopic("Topic B", "Description B", 0),
+                                                new SyllabusService.AiTopic("Topic C", "Description C", 30))));
+                when(objectMapper.readValue(
+                                anyString(),
+                                eq(SyllabusService.AiSyllabusResponse.class)))
+                                .thenReturn(new SyllabusService.AiSyllabusResponse(modules));
+
+                assertThrows(
+                                AiResponseParsingException.class,
+                                () -> syllabusService.generateSyllabus(validRequest()));
+
+                modules.set(3, new SyllabusService.AiModule(
+                                "Module 4",
+                                "Description for Module 4",
+                                3.0,
+                                List.of(
+                                                new SyllabusService.AiTopic("Topic A", "Description A", 60),
+                                                new SyllabusService.AiTopic("Topic B", "Description B", -1),
+                                                new SyllabusService.AiTopic("Topic C", "Description C", 30))));
                 when(objectMapper.readValue(
                                 anyString(),
                                 eq(SyllabusService.AiSyllabusResponse.class)))
@@ -849,8 +892,37 @@ class SyllabusServiceTest {
                 assertEquals(3, firstModule.getTopics().size());
                 assertEquals("Description for Topic A", firstModule.getTopics().get(0).getDescription());
                 assertEquals(60, firstModule.getTopics().get(0).getEstimatedMinutes());
+                assertEquals(45, firstModule.getTopics().get(1).getEstimatedMinutes());
+                assertEquals(30, firstModule.getTopics().get(2).getEstimatedMinutes());
                 assertEquals("Description for Module 1", response.modules().get(0).description());
                 assertEquals("Description for Topic A", response.modules().get(0).topics().get(0).description());
+                assertEquals(60, response.modules().get(0).topics().get(0).estimatedMinutes());
+                assertEquals(45, response.modules().get(0).topics().get(1).estimatedMinutes());
+                assertEquals(30, response.modules().get(0).topics().get(2).estimatedMinutes());
+        }
+
+        @Test
+        void generateSyllabusIncludesTopicEstimatedMinutesInAiPrompt() throws Exception {
+                stubAiOutput("{\"modules\":[]}");
+                when(objectMapper.readValue(
+                                anyString(),
+                                eq(SyllabusService.AiSyllabusResponse.class)))
+                                .thenReturn(validAiSyllabus());
+                when(userContext.getCurrentUser()).thenReturn(User.builder()
+                                .id(12L)
+                                .email("prompt@example.com")
+                                .password("test-password")
+                                .name("Prompt User")
+                                .build());
+                when(syllabusRepository.save(org.mockito.ArgumentMatchers.any(Syllabus.class)))
+                                .thenAnswer(invocation -> invocation.getArgument(0));
+
+                syllabusService.generateSyllabus(validRequest());
+
+                verify(chatClient.prompt().system(anyString()))
+                                .user(org.mockito.ArgumentMatchers.<String>argThat(prompt ->
+                                                prompt.contains("\"estimatedMinutes\": 30")
+                                                                && prompt.contains("positive integer")));
         }
 
         @Test
@@ -899,9 +971,9 @@ class SyllabusServiceTest {
                                 "Description for " + title,
                                 3.0,
                                 List.of(
-                                                new SyllabusService.AiTopic("Topic A", "Description for Topic A"),
-                                                new SyllabusService.AiTopic("Topic B", "Description for Topic B"),
-                                                new SyllabusService.AiTopic("Topic C", "Description for Topic C")));
+                                                new SyllabusService.AiTopic("Topic A", "Description for Topic A", 60),
+                                                new SyllabusService.AiTopic("Topic B", "Description for Topic B", 45),
+                                                new SyllabusService.AiTopic("Topic C", "Description for Topic C", 30)));
         }
 
         private SyllabusService.AiSyllabusResponse validAiSyllabus() {

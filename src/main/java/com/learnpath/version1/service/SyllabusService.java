@@ -42,7 +42,10 @@ public class SyllabusService {
                         List<AiTopic> topics) {
         }
 
-        record AiTopic(String name, String description) {
+        record AiTopic(
+                        String name,
+                        String description,
+                        int estimatedMinutes) {
         }
 
         private final ChatClient chatClient;
@@ -147,7 +150,8 @@ public class SyllabusService {
                                                 || topic.name() == null
                                                 || topic.name().isBlank()
                                                 || topic.description() == null
-                                                || topic.description().isBlank()) {
+                                                || topic.description().isBlank()
+                                                || topic.estimatedMinutes() <= 0) {
                                         throw new AiResponseParsingException(
                                                         "Each AI-generated topic must have a name and description.",
                                                         null);
@@ -212,16 +216,11 @@ public class SyllabusService {
                                         .topics(new ArrayList<>())
                                         .build();
 
-                        int topicCount = aiMod.topics().size();
-                        int estimatedMinutes = Math.max(
-                                        1,
-                                        (int) Math.ceil(aiMod.estimatedHours() * 60.0 / topicCount));
-
                         for (AiTopic aiTopic : aiMod.topics()) {
                                 Topic topic = Topic.builder()
                                                 .name(aiTopic.name())
                                                 .description(aiTopic.description())
-                                                .estimatedMinutes(estimatedMinutes)
+                                                .estimatedMinutes(aiTopic.estimatedMinutes())
                                                 .completed(false)
                                                 .syllabusModule(mod)
                                                 .build();
@@ -239,43 +238,47 @@ public class SyllabusService {
 
         private String buildPrompt(SyllabusRequest request) {
                 return """
-                                                                            Topic: %s
-                                                                            Current understanding: %s
-                                                                            Desired depth: %s
-                                                                            Goal: %s
+                                Topic: %s
+                                Current understanding: %s
+                                Desired depth: %s
+                                Goal: %s
 
-                                                                            Produce exactly 4-6 modules. Each module must have:
-                                - "title": a descriptive module title
-                                - "description": 1-2 sentences explaining what the learner will understand or be able to do after this module
-                                - "topics": a list of 3-5 topic objects, each containing:
-                                  - "name": a specific topic name
-                                  - "description": 1 concise sentence explaining what the topic covers
-                                - "estimatedHours": a number (e.g. 3.5) representing estimated hours
+                                Produce exactly 4-6 modules. Each module must have:
+                                                                        - "title": a descriptive module title
+                                                                        - "description": 1-2 sentences explaining what the learner will understand or be able to do after this module
+                                                                        - "topics": a list of 3-5 topic objects, each containing:
+                                                                          - "name": a specific topic name
+                                                                          - "description": 1 concise sentence explaining what the topic covers
+                                                                          - "estimatedMinutes": a positive integer estimating how long the topic takes to study
+                                                                        - "estimatedHours": a number (e.g. 3.5) representing estimated hours
 
-                                Return ONLY a valid JSON object with a single key "modules", like:
-                                {
-                                  "modules": [
-                                    {
-                                      "title": "Java Fundamentals",
-                                      "description": "Learn Java syntax and core programming constructs to build a foundation for object-oriented programming.",
-                                      "topics": [
-                                        {
+                                                                        Return ONLY a valid JSON object with a single key "modules", like:
+                                                                        {
+                                                                          "modules": [
+                                                                            {
+                                                                              "title": "Java Fundamentals",
+                                                                              "description": "Learn Java syntax and core programming constructs to build a foundation for object-oriented programming.",
+                                                                              "topics": [
+                                                                                {
                                           "name": "Variables and Data Types",
-                                          "description": "Understand primitive types, reference types, declarations, and type conversion."
+                                          "description": "Understand primitive types, reference types, declarations, and type conversion.",
+                                          "estimatedMinutes": 30
                                         },
-                                        {
-                                          "name": "Control Flow",
-                                          "description": "Use conditional statements and loops to control program execution."
+                                                                                {
+                                          "name": "Variables and Data Types",
+                                          "description": "Understand primitive types, reference types, declarations, and type conversion.",
+                                          "estimatedMinutes": 30
                                         },
-                                        {
-                                          "name": "Methods",
-                                          "description": "Organize reusable logic into methods with parameters and return values."
+                                                                                {
+                                          "name": "Variables and Data Types",
+                                          "description": "Understand primitive types, reference types, declarations, and type conversion.",
+                                          "estimatedMinutes": 30
                                         }
-                                      ],
-                                      "estimatedHours": 5.5
-                                    }
-                                  ]
-                                }"""
+                                                                              ],
+                                                                              "estimatedHours": 5.5
+                                                                            }
+                                                                          ]
+                                                                        }"""
                                 .formatted(request.topic(), request.currentUnderstanding(), request.depthLevel(),
                                                 request.goal());
 
