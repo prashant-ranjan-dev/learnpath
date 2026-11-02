@@ -73,8 +73,11 @@ public class AuthController {
                                                                         user.getEmail())));
 
                 } catch (EmailAlreadyRegisteredException exception) {
-                        return ResponseEntity.badRequest()
-                                        .body(Map.of("error", exception.getMessage()));
+                        return ResponseEntity.status(HttpStatus.CONFLICT)
+                                        .body(Map.of(
+                                                        "error", "Email already registered",
+                                                        "message", exception.getMessage(),
+                                                        "status", HttpStatus.CONFLICT.value()));
                 }
         }
 
