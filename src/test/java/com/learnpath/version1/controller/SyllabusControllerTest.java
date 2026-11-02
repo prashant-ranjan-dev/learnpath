@@ -113,7 +113,13 @@ class SyllabusControllerTest {
                                 .andExpect(status().isOk())
                                 .andExpect(jsonPath("$.length()").value(1))
                                 .andExpect(jsonPath("$[0].syllabusId").value(601))
-                                .andExpect(jsonPath("$[0].topic").value("Java"));
+                                .andExpect(jsonPath("$[0].topic").value("Java"))
+                                .andExpect(jsonPath("$[0].description")
+                                                .value("A Java learning path"))
+                                .andExpect(jsonPath("$[0].modules[0].description")
+                                                .value("Learn Java basics"))
+                                .andExpect(jsonPath("$[0].modules[0].topics[0].description")
+                                                .value("Learn variables"));
 
                 verify(userContext).getCurrentUser();
                 verify(syllabusService).getMySyllabi(currentUser);
@@ -131,7 +137,13 @@ class SyllabusControllerTest {
                                 .andExpect(status().isOk())
                                 .andExpect(jsonPath("$.syllabusId").value(601))
                                 .andExpect(jsonPath("$.topic").value("Java"))
-                                .andExpect(jsonPath("$.modules[0].title").value("Java Fundamentals"));
+                                .andExpect(jsonPath("$.modules[0].title").value("Java Fundamentals"))
+                                .andExpect(jsonPath("$.description")
+                                                .value("A Java learning path"))
+                                .andExpect(jsonPath("$.modules[0].description")
+                                                .value("Learn Java basics"))
+                                .andExpect(jsonPath("$.modules[0].topics[0].description")
+                                                .value("Learn variables"));
 
                 verify(userContext).getCurrentUser();
                 verify(syllabusService).getSyllabusById(601L, currentUser);
