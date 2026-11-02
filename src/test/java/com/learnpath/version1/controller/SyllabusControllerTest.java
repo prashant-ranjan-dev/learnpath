@@ -19,6 +19,8 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
@@ -74,6 +76,24 @@ class SyllabusControllerTest {
                 .andExpect(jsonPath("$.modules[0].topics[0].name").value("Variables"));
 
         verify(syllabusService).generateSyllabus(request);
+    }
+
+    @Test
+    void postSyllabusRejectsBlankRequiredFields() throws Exception {
+        mockMvc.perform(post("/api/syllabus")
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "topic": " ",
+                                  "currentUnderstanding": "",
+                                  "depthLevel": "Intermediate",
+                                  "goal": "Build backend applications"
+                                }
+                                """))
+                .andExpect(status().isBadRequest());
+
+        verify(syllabusService, never())
+                .generateSyllabus(any(SyllabusRequest.class));
     }
 
     @Test
