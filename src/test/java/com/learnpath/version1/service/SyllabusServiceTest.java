@@ -680,7 +680,8 @@ class SyllabusServiceTest {
                 when(objectMapper.readValue(
                                 anyString(),
                                 eq(SyllabusService.AiSyllabusResponse.class)))
-                                .thenReturn(new SyllabusService.AiSyllabusResponse("  \n ", validAiSyllabus().modules()));
+                                .thenReturn(new SyllabusService.AiSyllabusResponse("  \n ",
+                                                validAiSyllabus().modules()));
 
                 assertThrows(
                                 AiResponseParsingException.class,
@@ -954,8 +955,8 @@ class SyllabusServiceTest {
                 syllabusService.generateSyllabus(validRequest());
 
                 verify(chatClient.prompt().system(anyString()))
-                                .user(org.mockito.ArgumentMatchers.<String>argThat(prompt ->
-                                                prompt.contains("\"estimatedMinutes\"")
+                                .user(org.mockito.ArgumentMatchers
+                                                .<String>argThat(prompt -> prompt.contains("\"estimatedMinutes\"")
                                                                 && prompt.contains("positive integer")
                                                                 && prompt.contains("top-level \"description\"")));
         }
@@ -1031,6 +1032,191 @@ class SyllabusServiceTest {
                         String description,
                         List<SyllabusService.AiModule> modules) {
                 return new SyllabusService.AiSyllabusResponse(description, modules);
+        }
+
+        @Test
+        void toResponseWithIdsSelectsFirstIncompleteTopicInFirstUnlockedModule() {
+                User user = User.builder()
+                                .id(51L)
+                                .email("resume@example.com")
+                                .password("test-password")
+                                .name("Resume User")
+                                .build();
+
+                Topic completedTopic = Topic.builder()
+                                .id(501L)
+                                .name("Completed topic")
+                                .completed(true)
+                                .build();
+
+                Topic nextTopic = Topic.builder()
+                                .id(502L)
+                                .name("Next topic")
+                                .completed(false)
+                                .build();
+
+                SyllabusModule firstModule = SyllabusModule.builder()
+                                .id(51L)
+                                .title("Module One")
+                                .estimatedHours(3.0)
+                                .topics(new ArrayList<>(List.of(
+                                                completedTopic, nextTopic)))
+                                .build();
+
+                SyllabusModule secondModule = SyllabusModule.builder()
+                                .id(52L)
+                                .title("Module Two")
+                                .estimatedHours(4.0)
+                                .topics(new ArrayList<>(List.of(
+                                                Topic.builder()
+                                                                .id(503L)
+                                                                .name("Locked topic")
+                                                                .completed(false)
+                                                                .build())))
+                                .build();
+
+                Syllabus syllabus = Syllabus.builder()
+                                .id(51L)
+                                .topic("Java")
+                                .user(user)
+                                .modules(new ArrayList<>(List.of(
+                                                firstModule, secondModule)))
+                                .build();
+
+                when(quizRepository.findByModuleId(51L))
+                                .thenReturn(Optional.empty());
+                when(quizRepository.findByModuleId(52L))
+                                .thenReturn(Optional.empty());
+
+                var response = syllabusService.toResponseWithIds(syllabus);
+
+                assertEquals(502L, response.nextTopic().topicId());
+                assertEquals("Next topic", response.nextTopic().topicName());
+                assertEquals(51L, response.nextTopic().moduleId());
+                assertEquals(true, response.modules().get(0).unlocked());
+                assertEquals(false, response.modules().get(1).unlocked());
+        }
+
+        @Test
+        void toResponseWithIdsSelectsNextModuleTopicAfterPreviousModuleQuizIsPassed() {
+                User user = User.builder()
+                                .id(61L)
+                                .email("resume-next@example.com")
+                                .password("test-password")
+                                .name("Resume User")
+                                .build();
+
+                SyllabusModule firstModule = SyllabusModule.builder()
+                                .id(61L)
+                                .title("Module One")
+                                .estimatedHours(3.0)
+                                .topics(new ArrayList<>(List.of(
+                                                Topic.builder()
+                                                                .id(601L)
+                                                                .name("Completed one")
+                                                                .completed(true)
+                                                                .build(),
+                                                Topic.builder()
+                                                                .id(602L)
+                                                                .name("Completed two")
+                                                                .completed(true)
+                                                                .build())))
+                                .build();
+
+                SyllabusModule secondModule = SyllabusModule.builder()
+                                .id(62L)
+                                .title("Module Two")
+                                .estimatedHours(4.0)
+                                .topics(new ArrayList<>(List.of(
+                                                Topic.builder()
+                                                                .id(603L)
+                                                                .name("Next module topic")
+                                                                .completed(false)
+                                                                .build())))
+                                .build();
+
+                Syllabus syllabus = Syllabus.builder()
+                                .id(61L)
+                                .topic("Java")
+                                .user(user)
+                                .modules(new ArrayList<>(List.of(
+                                                firstModule, secondModule)))
+                                .build();
+
+                when(quizRepository.findByModuleId(61L))
+                                .thenReturn(Optional.of(
+                                                Quiz.builder().id(610L).build()));
+                when(quizAttemptRepository
+                                .existsByQuizIdAndUserIdAndPassedTrue(610L, 61L))
+                                .thenReturn(true);
+                when(quizRepository.findByModuleId(62L))
+                                .thenReturn(Optional.empty());
+
+                var response = syllabusService.toResponseWithIds(syllabus);
+
+                assertEquals(603L, response.nextTopic().topicId());
+                assertEquals("Next module topic", response.nextTopic().topicName());
+                assertEquals(62L, response.nextTopic().moduleId());
+                assertEquals(true, response.modules().get(1).unlocked());
+        }
+
+        @Test
+        void toResponseWithIdsReturnsNoNextTopicWhenAllTopicsAreCompleted() {
+                User user = User.builder()
+                                .id(71L)
+                                .email("resume-complete@example.com")
+                                .password("test-password")
+                                .name("Completed User")
+                                .build();
+
+                SyllabusModule firstModule = SyllabusModule.builder()
+                                .id(71L)
+                                .title("Module One")
+                                .estimatedHours(3.0)
+                                .topics(new ArrayList<>(List.of(
+                                                Topic.builder()
+                                                                .id(701L)
+                                                                .name("Completed one")
+                                                                .completed(true)
+                                                                .build())))
+                                .build();
+
+                SyllabusModule secondModule = SyllabusModule.builder()
+                                .id(72L)
+                                .title("Module Two")
+                                .estimatedHours(4.0)
+                                .topics(new ArrayList<>(List.of(
+                                                Topic.builder()
+                                                                .id(702L)
+                                                                .name("Completed two")
+                                                                .completed(true)
+                                                                .build())))
+                                .build();
+
+                Syllabus syllabus = Syllabus.builder()
+                                .id(71L)
+                                .topic("Java")
+                                .user(user)
+                                .modules(new ArrayList<>(List.of(
+                                                firstModule, secondModule)))
+                                .build();
+
+                when(quizRepository.findByModuleId(71L))
+                                .thenReturn(Optional.of(
+                                                Quiz.builder().id(710L).build()));
+                when(quizAttemptRepository
+                                .existsByQuizIdAndUserIdAndPassedTrue(710L, 71L))
+                                .thenReturn(true);
+                when(quizRepository.findByModuleId(72L))
+                                .thenReturn(Optional.of(
+                                                Quiz.builder().id(720L).build()));
+                when(quizAttemptRepository
+                                .existsByQuizIdAndUserIdAndPassedTrue(720L, 71L))
+                                .thenReturn(true);
+
+                var response = syllabusService.toResponseWithIds(syllabus);
+
+                assertNull(response.nextTopic());
         }
 
 }
